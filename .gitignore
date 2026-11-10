@@ -1,0 +1,28 @@
+# Setup & Reference directory (large videos and local specs)
+project_setup/
+setup/
+
+# Media and large assets
+*.mp4
+*.mov
+*.avi
+*.mkv
+
+# Temporary scratch and cache files
+__pycache__/
+*.py[cod]
+*$py.class
+*.tmp
+*.bak
+
+# Operating System files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+# Editor directories
+.vscode/
+.idea/
+

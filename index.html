@@ -1,0 +1,2082 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Powertrain & Engine Management Simulator</title>
+
+<!-- Tailwind CSS CDN -->
+<script src="https://cdn.tailwindcss.com"></script>
+<!-- Chart.js CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+  :root{
+    --page-bg:#f8fafc; --card-bg:#ffffff; --card-border:#e2e8f0;
+    --readout-bg:#f8f9fa; --readout-border:#edf2f7;
+    --accent:#0284c7; --accent-text:#0369a1;
+  }
+  html{ -webkit-text-size-adjust:100%; }
+  body{
+    background:#f8fafc; color:#1e293b; overflow-x:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .tabular{ font-variant-numeric:tabular-nums; font-feature-settings:"tnum"; }
+  .ltr-iso{ direction:ltr; unicode-bidi:isolate; text-align:left; }
+
+  .card{ background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; box-shadow:0 1px 2px rgba(15,23,42,.05); }
+  .metric-card{ background:#ffffff; border:1px solid #e2e8f0; border-radius:12px; box-shadow:0 1px 2px rgba(15,23,42,.05); padding:10px 12px; min-width:0; }
+  .readout{ background:#f8f9fa; border:1px solid #edf2f7; border-radius:10px; padding:8px 12px; min-width:0; }
+
+  .lbl{ font-size:11px; font-weight:500; color:#64748b; text-transform:uppercase; letter-spacing:.06em; }
+  .val{ font-size:17px; font-weight:700; color:#0f172a; line-height:1.25; }
+  .unit{ font-size:12px; font-weight:400; color:#64748b; margin-left:2px; }
+  .note{ font-size:12px; color:#64748b; line-height:1.65; }
+
+  /* Range sliders — engineering thumb + touch hit area */
+  input[type=range]{
+    -webkit-appearance:none; appearance:none; width:100%;
+    height:38px; background:transparent; margin:0; cursor:pointer; min-height:38px;
+  }
+  input[type=range]::-webkit-slider-runnable-track{ height:6px; background:#e2e8f0; border-radius:4px; }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; appearance:none; width:22px; height:22px; border-radius:50%;
+    background:#0284c7; border:3px solid #ffffff; box-shadow:0 1px 4px rgba(15,23,42,.35);
+    margin-top:-8px; transition:transform .1s ease;
+  }
+  input[type=range]:active::-webkit-slider-thumb{ transform:scale(1.18); }
+  input[type=range]::-moz-range-track{ height:6px; background:#e2e8f0; border-radius:4px; }
+  input[type=range]::-moz-range-thumb{
+    width:20px; height:20px; border-radius:50%; background:#0284c7;
+    border:3px solid #ffffff; box-shadow:0 1px 4px rgba(15,23,42,.35);
+  }
+  input[type=range]{ accent-color:#0284c7; }
+
+  input[type=number]{
+    font-family:inherit; font-size:13px; color:#0f172a;
+    background:#ffffff; border:1px solid #cbd5e1; border-radius:8px;
+    padding:7px 10px; min-height:38px; outline:none; width:100%;
+  }
+  input[type=number]:focus{ border-color:#0284c7; box-shadow:0 0 0 3px rgba(2,132,199,.15); }
+
+  /* Premium custom executive dropdown component */
+  .c-select-wrap{ position:relative; width:100%; min-width:0; }
+  .c-select-wrap.is-active-wrap{ z-index:60; }
+  .c-native-select{
+    position:absolute !important; width:1px !important; height:1px !important;
+    padding:0 !important; margin:-1px !important; overflow:hidden !important;
+    clip:rect(0, 0, 0, 0) !important; white-space:nowrap !important;
+    border:0 !important; opacity:0 !important; pointer-events:none !important;
+  }
+  .c-select-btn{
+    width:100%; min-height:40px; padding:8px 12px;
+    background:#ffffff; border:1px solid #cbd5e1; border-radius:9px;
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    font-family:inherit; font-size:13px; font-weight:500; color:#0f172a;
+    cursor:pointer; transition:border-color .15s ease, box-shadow .15s ease, background .15s ease;
+    box-shadow:0 1px 2px rgba(15,23,42,.04); text-align:left; user-select:none; outline:none;
+  }
+  .c-select-btn:hover{ border-color:#94a3b8; background-color:#f8fafc; }
+  .c-select-btn.is-open{ border-color:#0284c7; box-shadow:0 0 0 3px rgba(2,132,199,.15); background:#ffffff; }
+  .c-select-btn:focus-visible{ border-color:#0284c7; box-shadow:0 0 0 3px rgba(2,132,199,.15); }
+  .c-select-arrow{
+    width:16px; height:16px; stroke:#64748b; flex-shrink:0;
+    transition:transform .2s cubic-bezier(.4,0,.2,1), stroke .15s ease;
+  }
+  .c-select-btn.is-open .c-select-arrow{ transform:rotate(180deg); stroke:#0284c7; }
+  .c-select-menu{
+    position:absolute; top:calc(100% + 4px); left:0; right:0;
+    background:#ffffff; border:1px solid #e2e8f0; border-radius:10px;
+    box-shadow:0 10px 25px -5px rgba(15,23,42,.12), 0 8px 10px -6px rgba(15,23,42,.06);
+    padding:4px; z-index:70; max-height:220px; overflow-y:auto;
+    display:none; flex-direction:column; gap:2px;
+  }
+  .c-select-menu.is-open{ display:flex; animation:cSelectFadeIn .12s ease-out; }
+  @keyframes cSelectFadeIn{
+    from{ opacity:0; transform:translateY(-4px); }
+    to{ opacity:1; transform:translateY(0); }
+  }
+  .c-select-opt{
+    padding:8px 10px; border-radius:7px; font-size:12.5px; font-weight:500; color:#334155;
+    cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:8px;
+    transition:background .12s ease, color .12s ease; user-select:none;
+  }
+  .c-select-opt:hover{ background:#f1f5f9; color:#0f172a; }
+  .c-select-opt.is-selected{ background:#e0f2fe; color:#0369a1; font-weight:600; }
+  .c-check-icon{ width:14px; height:14px; stroke:#0284c7; flex-shrink:0; display:none; }
+  .c-select-opt.is-selected .c-check-icon{ display:block; }
+  /* Fallback native select */
+  select{
+    font-family:inherit; font-size:13px; font-weight:500; color:#0f172a;
+    background-color:#ffffff;
+    background-image:url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%23475569' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.75' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+    background-position:right 12px center; background-repeat:no-repeat; background-size:16px 16px;
+    padding:8px 36px 8px 12px; min-height:40px; outline:none; width:100%;
+    border:1px solid #cbd5e1; border-radius:9px; box-shadow:0 1px 2px rgba(15,23,42,.04);
+    appearance:none; -webkit-appearance:none; cursor:pointer;
+  }
+
+  /* Control row component — clean, non-boxed, video-faithful */
+  .ctl-head{ display:flex; justify-content:space-between; align-items:baseline; gap:6px; margin-bottom:1px; min-width:0; }
+  .ctl-label{ font-size:11.5px; font-weight:500; color:#334155; direction:ltr; unicode-bidi:isolate;
+    flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .ctl-val{
+    font-size:12px; font-weight:700; color:#0f172a; direction:ltr; unicode-bidi:isolate;
+    font-variant-numeric:tabular-nums; font-feature-settings:"tnum"; white-space:nowrap; flex-shrink:0;
+  }
+  .ctl-group{ padding:4px 0; background:transparent; border:none; border-radius:0; min-width:0; }
+
+  .btn{ border-radius:10px; padding:8px 14px; font-size:12.5px; font-weight:600; min-height:38px;
+    display:inline-flex; align-items:center; justify-content:center; gap:6px;
+    transition:background .15s ease, transform .08s ease; user-select:none; cursor:pointer;
+    direction:ltr; unicode-bidi:isolate; }
+  .btn:active{ transform:scale(.96); }
+  .btn-run{ background:#16a34a; color:#ffffff; }
+  .btn-run:hover{ background:#15803d; }
+  .btn-dark{ background:#334155; color:#ffffff; }
+  .btn-dark:hover{ background:#1e293b; }
+  .btn-outline-blue{ background:#e0f2fe; color:#0369a1; border:1px solid #7dd3fc; }
+  .btn-outline-blue:hover{ background:#bae6fd; }
+  .btn-outline-gray{ background:#f8fafc; color:#334155; border:1px solid #e2e8f0; }
+  .btn-outline-gray:hover{ background:#e2e8f0; }
+  .btn-outline-green{ background:#dcfce7; color:#15803d; border:1px solid #86efac; }
+  .btn-outline-green:hover{ background:#bbf7d0; }
+
+  /* ---- Tidy button toolbars (grid, equal cells, no chaotic wrapping) ---- */
+  .btn-toolbar{ display:grid; grid-template-columns:repeat(auto-fit, minmax(126px, 1fr)); gap:8px; }
+  .btn-toolbar .btn{ width:100%; }
+  /* State indication for toggle-style buttons */
+  .btn.is-on{ box-shadow:inset 0 0 0 2.5px rgba(2,132,199,.55), 0 1px 2px rgba(2,132,199,.25); }
+  .btn.is-off{ background:#f8fafc; color:#64748b; border-color:#e2e8f0; }
+  .btn:focus-visible{ outline:2px solid #0284c7; outline-offset:2px; }
+  .btn-toolbar .btn .u-state{ font-weight:700; color:inherit; }
+
+  /* Tabs */
+  .tab-btn{ padding:8px 14px; font-size:12.5px; font-weight:600; white-space:nowrap; border-radius:12px;
+    background:#ffffff; border:1px solid #e2e8f0; color:#334155; box-shadow:0 1px 2px rgba(15,23,42,.05);
+    transition:all .15s ease; cursor:pointer; direction:ltr; unicode-bidi:isolate; }
+  .tab-btn:hover{ color:#0369a1; }
+  .tab-btn.active{ background:#e0f2fe; color:#0369a1; border-color:#7dd3fc; }
+
+  .no-scrollbar::-webkit-scrollbar{ display:none; }
+  .no-scrollbar{ scrollbar-width:none; -ms-overflow-style:none; }
+
+  /* Pill badges */
+  .pill{ font-size:11.5px; font-weight:600; border-radius:9999px; padding:3px 10px; display:inline-flex; align-items:center; gap:5px; direction:ltr; unicode-bidi:isolate; }
+  .pill-blue{ background:#e0f2fe; color:#0369a1; }
+  .pill-green{ background:#dcfce7; color:#15803d; }
+  .pill-amber{ background:#fef3c7; color:#b45309; }
+  .pill-red{ background:#fee2e2; color:#b91c1c; }
+
+  /* Station chips (air-path schematic) — mobile swipeable track with zero truncation */
+  .st-chip{
+    background:#ffffff; border:1px solid #e2e8f0; border-radius:10px;
+    padding:6px 10px; text-align:center; min-width:82px; flex:0 0 auto;
+    box-shadow:0 1px 2px rgba(15,23,42,.04);
+  }
+  @media (min-width:860px){
+    .st-chip{ flex:1 1 0; min-width:0; }
+  }
+  .st-chip .st-id{ font-size:11px; font-weight:700; color:#0369a1; direction:ltr; unicode-bidi:isolate; }
+  .st-chip .st-p{ font-size:13.5px; font-weight:700; color:#0f172a; font-variant-numeric:tabular-nums; direction:ltr; unicode-bidi:isolate; margin:1px 0; }
+  .st-chip.public{ background:#f0f9ff; border-color:#bae6fd; }
+  .st-chip.boost{ background:#f0fdf4; border-color:#86efac; }
+  .st-chip .st-name{ font-size:10.5px; color:#64748b; white-space:nowrap; }
+
+  /* Oscilloscope screen */
+  .scope-screen{ background:#101a22; border:1px solid #1e293b; border-radius:12px; overflow:hidden;
+    box-shadow:inset 0 2px 6px rgba(0,0,0,.5); }
+  .eq-box{ background:#ffffff; border:1px solid #e2e8f0; border-radius:10px; padding:10px 12px; }
+  .eq{ direction:ltr; unicode-bidi:isolate; font-family:Consolas,"SFMono-Regular","Courier New",monospace;
+    font-size:12.5px; color:#0f172a; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;
+    padding:9px 11px; overflow-x:auto; white-space:nowrap; }
+
+  table.tbl{ width:100%; border-collapse:collapse; font-size:12.5px; }
+  table.tbl th{ background:#f8fafc; color:#475569; font-weight:600; text-align:left; padding:8px 12px; border-bottom:1px solid #e2e8f0; }
+  table.tbl td{ padding:8px 12px; border-bottom:1px solid #f1f5f9; color:#1e293b; }
+  table.tbl td.num{ font-variant-numeric:tabular-nums; font-feature-settings:"tnum"; font-weight:600; color:#0f172a; direction:ltr; unicode-bidi:isolate; }
+
+  /* ---- Keep table wrappers from tearing wide rows on small screens ---- */
+  .tbl-wrap{ width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  .tbl-wrap table.tbl{ min-width:420px; }
+  canvas{ max-width:100%; touch-action:pan-y; }
+
+  /* ---- Mobile responsiveness: phones first, scales up ---- */
+  @media (max-width:640px){
+    .card{ border-radius:14px; }
+    /* 44px comfortable tap targets */
+    .btn{ min-height:44px; padding:9px 12px; font-size:12.5px; }
+    .btn-toolbar{ grid-template-columns:repeat(auto-fit, minmax(132px, 1fr)); gap:7px; }
+    .tab-btn{ padding:9px 11px; font-size:11.5px; min-height:40px; }
+    .readout{ padding:7px 10px; }
+    .val{ font-size:15.5px; }
+    .unit{ font-size:11px; }
+    .lbl{ font-size:10px; }
+    .ctl-val{ font-size:11px; padding:1px 5px; }
+    .pill{ font-size:10.5px; padding:3px 8px; }
+    select, input[type=number]{ min-height:42px; }
+    table.tbl th, table.tbl td{ padding:7px 9px; }
+  }
+  @media (max-width:400px){
+    .btn{ min-height:46px; font-size:12px; padding:9px 10px; }
+    .btn-toolbar{ grid-template-columns:1fr 1fr; gap:7px; }
+    .tab-btn{ padding:8px 10px; font-size:11px; }
+    .val{ font-size:14.5px; }
+    /* odd-count toolbars: last button spans both cells so no empty gap */
+    #btnAutoAngle{ grid-column:span 2; }
+  }
+</style>
+</head>
+<body class="tabular">
+<div class="max-w-[1440px] mx-auto px-3 sm:px-6 py-4 flex flex-col gap-4">
+
+  <!-- ═══════════ PERSISTENT HEADER ═══════════ -->
+  <header class="card px-4 py-4 sm:px-5">
+    <div class="flex flex-wrap items-center gap-2">
+      <span class="pill pill-blue">Powertrain Simulation</span>
+      <span class="pill pill-green">Live Telemetry</span>
+    </div>
+    <div class="flex flex-wrap items-end justify-between gap-2 mt-2">
+      <div>
+        <h1 class="text-base sm:text-lg font-semibold text-slate-900 tracking-tight" dir="ltr" style="text-align:left">Powertrain & Engine Management Simulator</h1>
+        <p class="text-xs sm:text-sm text-slate-500 mt-0.5" dir="ltr" style="text-align:left">Interactive Engine Dynamics, Hybrid Systems & Diagnostics</p>
+      </div>
+      <span id="statePill" class="pill pill-green">SIMULATING</span>
+    </div>
+
+    <!-- Top 3-card live summary bar -->
+    <div class="grid grid-cols-3 gap-2.5 mt-3.5">
+      <div class="readout">
+        <div class="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Engine speed</div>
+        <div class="val mt-0.5"><span id="sumRpm">2150</span><span class="unit">rpm</span></div>
+      </div>
+      <div class="readout">
+        <div class="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Manifold pressure</div>
+        <div class="val mt-0.5"><span id="sumMap">98.0</span><span class="unit">kPa</span></div>
+      </div>
+      <div class="readout">
+        <div class="text-[11px] font-medium text-slate-500 uppercase tracking-wider">Coolant temperature</div>
+        <div class="val mt-0.5"><span id="sumEct">98.4</span><span class="unit">°C</span></div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ═══════════ SHARED MASTER OPERATING CONTROLS ═══════════ -->
+  <section class="card px-4 py-4 sm:px-5">
+    <div class="flex items-center justify-between gap-2">
+      <div class="flex items-center gap-2 min-w-0">
+        <span class="w-3 h-3 rounded-full bg-sky-600 flex-shrink-0"></span>
+        <h2 class="text-sm sm:text-base font-semibold text-slate-900 tracking-tight">Master operating controls</h2>
+        <span class="pill pill-blue">Shared inputs</span>
+      </div>
+    </div>
+    <!-- Cycle execution toolbar — 5 master playback buttons -->
+    <div class="btn-toolbar mt-3">
+      <button id="btnRun" class="btn btn-run">▶ Run cycle</button>
+      <button id="btnPause" class="btn btn-dark">⏸ Pause</button>
+      <button id="btnStep10" class="btn btn-outline-blue">+ 10° crank</button>
+      <button id="btnResetModel" class="btn btn-outline-gray">↺ Reset model</button>
+      <button id="btnAutoAngle" class="btn btn-outline-green">Auto angle: <span id="autoAngleState" class="u-state">ON</span></button>
+    </div>
+
+    <!-- 16 synchronized sliders — compact 2-column mobile, 4-column desktop -->
+    <div class="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-3 mt-3.5">
+      <div class="ctl-group">
+        <div class="ctl-head"><label for="ctrlRpm" class="ctl-label">Engine speed (RPM)</label><span id="valRpm" class="ctl-val">2150 rpm</span></div>
+        <input type="range" id="ctrlRpm" min="600" max="6500" step="50" value="2150">
+      </div>
+      <div class="ctl-group">
+        <div class="ctl-head"><label for="ctrlAps" class="ctl-label">Accelerator pedal APS (%)</label><span id="valAps" class="ctl-val">38 %</span></div>
+        <input type="range" id="ctrlAps" min="0" max="100" step="1" value="38">
+      </div>
+      <div class="ctl-group">
+        <div class="ctl-head"><label for="ctrlThrottle" class="ctl-label">Throttle plate target (%)</label><span id="valThrottle" class="ctl-val">50 %</span></div>
+        <input type="range" id="ctrlThrottle" min="0" max="100" step="1" value="50">
+      </div>
+      <div class="ctl-group">
+        <div class="ctl-head"><label for="ctrlSpeed" class="ctl-label">Vehicle speed (km/h)</label><span id="valSpeed" class="ctl-val">24 km/h</span></div>
+        <input type="range" id="ctrlSpeed" min="0" max="220" step="1" value="24">
+      </div>
+
+      <div class="ctl-group">
+        <div class="ctl-head"><label for="ctrlPamb" class="ctl-label">Ambient pressure (kPa abs)</label><span id="valPamb" class="ctl-val">85.3 kPa</span></div>
+        <input type="range" id="ctrlPamb" min="70.0" max="105.0" step="0.1" value="85.3">
+      </div>
+      <div class="ctl-group">
+        <div class="ctl-head"><label for="ctrlTamb" class="ctl-label">Ambient temperature (°C)</label><span id="valTamb" class="ctl-val">10 °C</span></div>
+        <input type="range" id="ctrlTamb" min="-20" max="50" step="1" value="10">
+      </div>
+      <div class="ctl-group">
+        <div class="ctl-head"><label for="ctrlPr" class="ctl-label">Compressor pressure ratio</label><span id="valPr" class="ctl-val">1.48</span></div>
+        <input type="range" id="ctrlPr" min="1.00" max="2.50" step="0.01" value="1.48">
+      </div>
+      <div class="ctl-group">
+        <div class="ctl-head"><label for="ctrlEtaC" class="ctl-label">Compressor efficiency (%)</label><span id="valEtaC" class="ctl-val">76 %</span></div>
+        <input type="range" id="ctrlEtaC" min="50" max="85" step="1" value="76">
+      </div>
+
+      <div class="ctl-group">
+        <div class="ctl-head"><label for="ctrlEtaIc" class="ctl-label">Intercooler effectiveness (%)</label><span id="valEtaIc" class="ctl-val">44 %</span></div>
+        <input type="range" id="ctrlEtaIc" min="20" max="95" step="1" value="44">
+      </div>
+      <div class="ctl-group">
+        <div class="ctl-head"><label for="ctrlDropIc" class="ctl-label">Intercooler pressure drop (kPa)</label><span id="valDropIc" class="ctl-val">8.0 kPa</span></div>
+        <input type="range" id="ctrlDropIc" min="0" max="25" step="0.5" value="8.0">
+      </div>
+      <div class="ctl-group">
+        <div class="ctl-head"><label for="ctrlFilterLoss" class="ctl-label">Air filter restriction (kPa)</label><span id="valFilterLoss" class="ctl-val">1.5 kPa</span></div>
+        <input type="range" id="ctrlFilterLoss" min="0.0" max="5.0" step="0.1" value="1.5">
+      </div>
+      <div class="ctl-group">
+        <div class="ctl-head"><label for="ctrlDuctLoss" class="ctl-label">Intake duct loss (kPa)</label><span id="valDuctLoss" class="ctl-val">2.0 kPa</span></div>
+        <input type="range" id="ctrlDuctLoss" min="0" max="10" step="0.1" value="2.0">
+      </div>
+
+      <div class="ctl-group">
+        <div class="ctl-head"><label for="ctrlEtaV" class="ctl-label">Volumetric efficiency (%)</label><span id="valEtaV" class="ctl-val">103 %</span></div>
+        <input type="range" id="ctrlEtaV" min="50" max="130" step="1" value="103">
+      </div>
+      <div class="ctl-group">
+        <div class="ctl-head"><label for="ctrlCr" class="ctl-label">Compression ratio (assumed)</label><span id="valCr" class="ctl-val">12.0 :1</span></div>
+        <input type="range" id="ctrlCr" min="8.0" max="14.0" step="0.5" value="12.0">
+      </div>
+      <div class="ctl-group">
+        <div class="ctl-head"><label for="ctrlRod" class="ctl-label">Connecting rod length (assumed mm)</label><span id="valRod" class="ctl-val">140 mm</span></div>
+        <input type="range" id="ctrlRod" min="110" max="170" step="1" value="140">
+      </div>
+      <div class="ctl-group">
+        <div class="ctl-head"><label for="ctrlCrank" class="ctl-label">Crank angle (0–720°)</label><span id="valCrank" class="ctl-val">0 °</span></div>
+        <input type="range" id="ctrlCrank" min="0" max="720" step="1" value="0">
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════ 8-TAB NAVIGATION ═══════════ -->
+  <nav id="navTabsContainer" class="no-scrollbar flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-1.5 border-b border-slate-200">
+    <button class="tab-btn active" data-tab="tab1">Overview</button>
+    <button class="tab-btn" data-tab="tab2">Air path</button>
+    <button class="tab-btn" data-tab="tab3">Engine 720°</button>
+    <button class="tab-btn" data-tab="tab4">GDI &amp; combustion</button>
+    <button class="tab-btn" data-tab="tab5">Cooling</button>
+    <button class="tab-btn" data-tab="tab6">MHEV &amp; DCT</button>
+    <button class="tab-btn" data-tab="tab7">Sensors &amp; ECU</button>
+    <button class="tab-btn" data-tab="tab8">Oscilloscope</button>
+  </nav>
+
+  <!-- ═══════════ TAB 1: OVERVIEW ═══════════ -->
+  <section id="tab1" class="tab-content flex flex-col gap-4">
+    <div class="card px-4 py-4 sm:px-5">
+      <h3 class="text-sm sm:text-base font-semibold text-slate-900 tracking-tight">System dashboard</h3>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-3">
+        <div class="readout"><div class="lbl">Brake torque (model)</div><div class="val mt-0.5"><span id="t1Torque">93.4</span><span class="unit">N·m</span></div></div>
+        <div class="readout"><div class="lbl">Brake power</div><div class="val mt-0.5"><span id="t1Power">21.0</span><span class="unit">kW</span></div></div>
+        <div class="readout"><div class="lbl">Air mass flow</div><div class="val mt-0.5"><span id="t1AirMass">32.74</span><span class="unit">g/s</span></div></div>
+        <div class="readout"><div class="lbl">Lambda target</div><div class="val mt-0.5"><span id="t1Lambda">0.95</span></div></div>
+        <div class="readout"><div class="lbl">Fuel flow</div><div class="val mt-0.5"><span id="t1FuelFlow">8.39</span><span class="unit">kg/h</span></div></div>
+        <div class="readout"><div class="lbl">Manifold air density</div><div class="val mt-0.5"><span id="t1Density">1.100</span><span class="unit">kg/m³</span></div></div>
+        <div class="readout"><div class="lbl">BMEP</div><div class="val mt-0.5"><span id="t1Bmep">7.33</span><span class="unit">bar</span></div></div>
+        <div class="readout"><div class="lbl">Engine state</div><div id="t1State" class="pill pill-green mt-1.5 w-max">NORMAL</div></div>
+      </div>
+    </div>
+
+    <div class="card px-4 py-4 sm:px-5">
+      <h3 class="text-sm sm:text-base font-semibold text-slate-900 tracking-tight">Integrated air-path visualization</h3>
+      <!-- Air path schematic chips — mobile horizontal swipeable track -->
+      <div class="flex items-stretch gap-2 overflow-x-auto no-scrollbar pb-2 pt-1 flex-nowrap scroll-smooth -mx-1 px-1 mt-2.5">
+        <div class="st-chip" id="chipP0-wrap"><div class="st-id">P0</div><div class="st-p" id="chipP0">85.3</div><div class="st-name">Ambient</div></div>
+        <div class="st-chip public" id="chipP1-wrap"><div class="st-id">P1</div><div class="st-p" id="chipP1">83.8</div><div class="st-name">Air filter</div></div>
+        <div class="st-chip" id="chipP2-wrap"><div class="st-id">P2</div><div class="st-p" id="chipP2">83.8</div><div class="st-name">Comp. inlet</div></div>
+        <div class="st-chip boost" id="chipP3-wrap"><div class="st-id">P3</div><div class="st-p" id="chipP3">124.0</div><div class="st-name">Compressor</div></div>
+        <div class="st-chip boost" id="chipP4-wrap"><div class="st-id">P4</div><div class="st-p" id="chipP4">116.0</div><div class="st-name">Intercooler</div></div>
+        <div class="st-chip" id="chipP5-wrap"><div class="st-id">P5</div><div class="st-p" id="chipP5">114.0</div><div class="st-name">Intake duct</div></div>
+        <div class="st-chip" id="chipP6-wrap"><div class="st-id">P6</div><div class="st-p" id="chipP6">98.0</div><div class="st-name">Manifold/MAP</div></div>
+        <div class="st-chip" id="chipP7-wrap"><div class="st-id">P7</div><div class="st-p" id="chipP7">96.8</div><div class="st-name">Intake port</div></div>
+        <div class="st-chip" id="chipP8-wrap"><div class="st-id">P8</div><div class="st-p" id="chipP8">96.8</div><div class="st-name">Cylinder</div></div>
+      </div>
+      <!-- PV indicator diagram -->
+      <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
+        <h4 class="text-xs font-semibold text-slate-700" dir="ltr" style="text-align:left">PV indicator diagram — cylinder pressure vs instantaneous volume</h4>
+        <span class="ctl-val">V<sub>c</sub> ≈ 36.3 cm³ · V<sub>max</sub> ≈ 435.8 cm³</span>
+      </div>
+      <div class="w-full h-[220px] sm:h-[280px] mt-1.5"><canvas id="chartPV"></canvas></div>
+    </div>
+  </section>
+
+  <!-- ═══════════ TAB 2: AIR PATH ═══════════ -->
+  <section id="tab2" class="tab-content hidden flex-col gap-4">
+    <div class="card px-4 py-4 sm:px-5">
+      <h3 class="text-sm sm:text-base font-semibold text-slate-900 tracking-tight">Air-path pressure stations — P0 to P8</h3>
+      <div class="grid grid-cols-2 gap-2.5 mt-3">
+        <div class="readout"><div class="lbl">Manifold pressure MAP</div><div class="val mt-0.5"><span id="t2Map">98.0</span><span class="unit">kPa abs / <span id="t2MapGauge">12.7</span> kPa gauge</span></div></div>
+        <div class="readout"><div class="lbl">Intake air mass flow</div><div class="val mt-0.5"><span id="t2Flow">32.74</span><span class="unit">g/s</span></div></div>
+        <div class="readout"><div class="lbl">Air velocity (mean duct estimate)</div><div class="val mt-0.5"><span id="t2Vel">3.2</span><span class="unit">m/s</span></div></div>
+        <div class="readout"><div class="lbl">Manifold density</div><div class="val mt-0.5"><span id="t2Den">1.100</span><span class="unit">kg/m³</span></div></div>
+      </div>
+      <div class="mt-3 bg-slate-50 border border-slate-200 rounded-xl overflow-x-auto">
+        <table class="tbl min-w-[540px]">
+          <thead><tr>
+            <th>Station</th>
+            <th>Component location</th>
+            <th>Absolute pressure (kPa)</th>
+          </tr></thead>
+          <tbody id="stationsBody"><!-- populated by JS --></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════ TAB 3: ENGINE 720° KINEMATICS ═══════════ -->
+  <section id="tab3" class="tab-content hidden flex-col gap-4">
+    <div class="card px-4 py-4 sm:px-5">
+      <h3 class="text-sm sm:text-base font-semibold text-slate-900 tracking-tight">Crank-slider geometry and four moving pistons</h3>
+      <div class="flex flex-wrap items-center gap-2 mt-2.5">
+        <span class="ctl-val">Bore: 75.6 mm</span>
+        <span class="ctl-val">Stroke: 89.0 mm</span>
+        <span class="ctl-val">Displacement: 1598 cc</span>
+        <span class="ctl-val">Firing order: 1–3–4–2</span>
+      </div>
+      <div class="w-full h-[230px] sm:h-[270px] mt-3 bg-slate-50 border border-slate-200 rounded-xl"><canvas id="canvasPistons" class="w-full h-full"></canvas></div>
+    </div>
+
+    <div class="card px-4 py-4 sm:px-5">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <h3 class="text-sm sm:text-base font-semibold text-slate-900 tracking-tight">Selected cylinder and instantaneous state</h3>
+        <div class="flex items-center gap-2">
+          <label for="selectCylinder" class="ctl-label">Cylinder</label>
+          <select id="selectCylinder" class="!w-auto">
+            <option value="1" selected>Cylinder 1</option>
+            <option value="3">Cylinder 3</option>
+            <option value="4">Cylinder 4</option>
+            <option value="2">Cylinder 2</option>
+          </select>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mt-3">
+        <div class="readout"><div class="lbl">Cycle phase</div><div class="val mt-0.5 text-lg" id="cPhase">INTAKE</div></div>
+        <div class="readout"><div class="lbl">Local crank angle</div><div class="val mt-0.5"><span id="cAngle">0.0</span><span class="unit">°</span></div></div>
+        <div class="readout"><div class="lbl">Piston displacement from TDC</div><div class="val mt-0.5"><span id="cDisp">0.0</span><span class="unit">mm</span></div></div>
+        <div class="readout"><div class="lbl">Cylinder volume</div><div class="val mt-0.5"><span id="cVol">36.3</span><span class="unit">cm³</span></div></div>
+        <div class="readout"><div class="lbl">Estimated cylinder pressure</div><div class="val mt-0.5"><span id="cPress">2.0</span><span class="unit">bar</span></div></div>
+        <div class="readout"><div class="lbl">Estimated gas temperature</div><div class="val mt-0.5"><span id="cTemp">310</span><span class="unit">K</span></div></div>
+      </div>
+      <div class="w-full h-[240px] sm:h-[300px] mt-3"><canvas id="chartCylPress"></canvas></div>
+    </div>
+
+    <div class="card px-4 py-4 sm:px-5">
+      <h3 class="text-sm sm:text-base font-semibold text-slate-900 tracking-tight">Valve event controls</h3>
+      <div class="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-x-4 gap-y-3 mt-3">
+        <div class="ctl-group">
+          <div class="ctl-head"><label for="ctrlIvo" class="ctl-label">IVO (° BTDC)</label><span id="valIvo" class="ctl-val">10 °</span></div>
+          <input type="range" id="ctrlIvo" min="-30" max="30" step="1" value="10">
+        </div>
+        <div class="ctl-group">
+          <div class="ctl-head"><label for="ctrlIvc" class="ctl-label">IVC (° ABDC)</label><span id="valIvc" class="ctl-val">40 °</span></div>
+          <input type="range" id="ctrlIvc" min="10" max="70" step="1" value="40">
+        </div>
+        <div class="ctl-group">
+          <div class="ctl-head"><label for="ctrlEvo" class="ctl-label">EVO (° BBDC)</label><span id="valEvo" class="ctl-val">45 °</span></div>
+          <input type="range" id="ctrlEvo" min="10" max="70" step="1" value="45">
+        </div>
+        <div class="ctl-group">
+          <div class="ctl-head"><label for="ctrlEvc" class="ctl-label">EVC (° ATDC)</label><span id="valEvc" class="ctl-val">10 °</span></div>
+          <input type="range" id="ctrlEvc" min="-20" max="30" step="1" value="10">
+        </div>
+        <div class="ctl-group">
+          <div class="ctl-head"><label for="ctrlMaxLift" class="ctl-label">Maximum valve lift (mm)</label><span id="valMaxLift" class="ctl-val">8 mm</span></div>
+          <input type="range" id="ctrlMaxLift" min="4" max="12" step="0.5" value="8">
+        </div>
+      </div>
+      <div class="w-full h-[200px] sm:h-[240px] mt-3"><canvas id="chartValveLift"></canvas></div>
+      <div class="flex items-center gap-4 mt-1.5 text-xs text-slate-600" dir="ltr" style="text-align:left">
+        <span class="inline-flex items-center gap-1.5"><span class="w-3 h-1.5 rounded-full" style="background:#16a34a"></span> Green: intake lift</span>
+        <span class="inline-flex items-center gap-1.5"><span class="w-3 h-1.5 rounded-full" style="background:#d97736"></span> Orange: exhaust lift</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════ TAB 4: GDI & COMBUSTION ═══════════ -->
+  <section id="tab4" class="tab-content hidden flex-col gap-4">
+    <div class="card px-4 py-4 sm:px-5">
+      <h3 class="text-sm sm:text-base font-semibold text-slate-900 tracking-tight">GDI fuel and combustion controls</h3>
+      <div class="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-3 mt-3">
+        <div class="ctl-group">
+          <div class="ctl-head"><label for="gdiLambda" class="ctl-label">Lambda target (λ)</label><span id="valGdiLambda" class="ctl-val">0.95</span></div>
+          <input type="range" id="gdiLambda" min="0.75" max="1.25" step="0.01" value="0.95">
+        </div>
+        <div class="ctl-group">
+          <div class="ctl-head"><label for="gdiLhv" class="ctl-label">Fuel lower heating value (MJ/kg)</label><span id="valGdiLhv" class="ctl-val">41.7</span></div>
+          <input type="range" id="gdiLhv" min="40.0" max="46.0" step="0.1" value="41.7">
+        </div>
+        <div class="ctl-group">
+          <div class="ctl-head"><label for="gdiRail" class="ctl-label">Rail pressure (bar)</label><span id="valGdiRail" class="ctl-val">120 bar</span></div>
+          <input type="range" id="gdiRail" min="30" max="350" step="5" value="120">
+        </div>
+        <div class="ctl-group">
+          <div class="ctl-head"><label for="gdiFlow" class="ctl-label">Injector flow reference (g/s)</label><span id="valGdiFlow" class="ctl-val">10 g/s</span></div>
+          <input type="range" id="gdiFlow" min="5" max="30" step="1" value="10">
+        </div>
+        <div class="ctl-group">
+          <div class="ctl-head"><label for="gdiSoi" class="ctl-label">Injection start angle (°)</label><span id="valGdiSoi" class="ctl-val">300 °</span></div>
+          <input type="range" id="gdiSoi" min="180" max="360" step="1" value="300">
+        </div>
+        <div class="ctl-group">
+          <div class="ctl-head"><label for="gdiDead" class="ctl-label">Injector dead time (ms)</label><span id="valGdiDead" class="ctl-val">0.80 ms</span></div>
+          <input type="range" id="gdiDead" min="0.2" max="1.5" step="0.05" value="0.8">
+        </div>
+        <div class="ctl-group">
+          <div class="ctl-head"><label for="gdiSpark" class="ctl-label">Ignition advance (° BTDC)</label><span id="valGdiSpark" class="ctl-val">15 °</span></div>
+          <input type="range" id="gdiSpark" min="0" max="45" step="0.5" value="15">
+        </div>
+        <div class="ctl-group">
+          <div class="ctl-head"><label for="gdiDur" class="ctl-label">Combustion duration (°)</label><span id="valGdiDur" class="ctl-val">45 °</span></div>
+          <input type="range" id="gdiDur" min="20" max="70" step="1" value="45">
+        </div>
+        <div class="ctl-group">
+          <div class="ctl-head"><label for="gdiEff" class="ctl-label">Combustion efficiency (%)</label><span id="valGdiEff" class="ctl-val">92 %</span></div>
+          <input type="range" id="gdiEff" min="80" max="100" step="1" value="92">
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mt-3">
+        <div class="readout"><div class="lbl">Stoichiometric AFR (gasoline approx.)</div><div class="val mt-0.5"><span id="gdiAfrStoich">14.7</span><span class="unit">:1</span></div></div>
+        <div class="readout"><div class="lbl">Actual AFR</div><div class="val mt-0.5"><span id="gdiAfr">13.96</span><span class="unit">:1</span></div></div>
+        <div class="readout"><div class="lbl">Fuel per cyl-cycle</div><div class="val mt-0.5"><span id="gdiFuelCyl">32.41</span><span class="unit">mg</span></div></div>
+        <div class="readout"><div class="lbl">Injector pulse width</div><div class="val mt-0.5"><span id="gdiPw">4.05</span><span class="unit">ms</span></div></div>
+        <div class="readout"><div class="lbl">Fuel flow</div><div class="val mt-0.5"><span id="gdiFlowKgH">8.39</span><span class="unit">kg/h</span></div></div>
+        <div class="readout"><div class="lbl">Fuel energy rate</div><div class="val mt-0.5"><span id="gdiEnergy">97.2</span><span class="unit">kW</span></div></div>
+      </div>
+    </div>
+
+    <div class="card px-4 py-4 sm:px-5">
+      <h3 class="text-sm sm:text-base font-semibold text-slate-900 tracking-tight">Wiebe heat-release approximation</h3>
+      <div class="w-full h-[230px] sm:h-[280px] mt-3"><canvas id="chartWiebe"></canvas></div>
+    </div>
+  </section>
+
+  <!-- ═══════════ TAB 5: COOLING ═══════════ -->
+  <section id="tab5" class="tab-content hidden flex-col gap-4">
+    <div class="card px-4 py-4 sm:px-5">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <h3 class="text-sm sm:text-base font-semibold text-slate-900 tracking-tight">Cooling system</h3>
+        <span class="pill pill-blue">LOW ≥ 96 °C · HIGH ≥ 103 °C</span>
+      </div>
+      <div class="btn-toolbar mt-3">
+        <button id="btnCoolStep" class="btn btn-outline-blue">▶ Advance cooling 10 s</button>
+        <button id="btnCoolReset" class="btn btn-outline-gray">↺ Reset coolant state</button>
+      </div>
+
+      <div class="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-3 mt-3">
+        <div class="ctl-group">
+          <div class="ctl-head"><label for="ctrlCoolInit" class="ctl-label">Coolant temperature initial (°C)</label><span id="valCoolInit" class="ctl-val">90 °C</span></div>
+          <input type="range" id="ctrlCoolInit" min="-10" max="120" step="1" value="90">
+        </div>
+        <div class="ctl-group">
+          <div class="ctl-head"><label for="ctrlCoolCap" class="ctl-label">Coolant thermal capacity (kJ/K)</label><span id="valCoolCap" class="ctl-val">55 kJ/K</span></div>
+          <input type="range" id="ctrlCoolCap" min="25" max="100" step="1" value="55">
+        </div>
+        <div class="ctl-group">
+          <div class="ctl-head"><label for="ctrlRadUa" class="ctl-label">Radiator UA (W/K)</label><span id="valRadUa" class="ctl-val">420 W/K</span></div>
+          <input type="range" id="ctrlRadUa" min="150" max="900" step="10" value="420">
+        </div>
+        <div class="flex flex-col justify-end min-w-0">
+          <label for="fanMode" class="ctl-label mb-1">Fan control</label>
+          <select id="fanMode">
+            <option value="auto" selected>AUTO</option>
+            <option value="off">OFF</option>
+            <option value="low">LOW</option>
+            <option value="high">HIGH</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mt-3">
+        <div class="readout"><div class="lbl">ECT temperature</div><div class="val mt-0.5"><span id="coolEct">98.4</span><span class="unit">°C</span></div></div>
+        <div class="readout"><div class="lbl">Fan state</div><div class="val mt-0.5"><span id="coolFan">OFF</span></div></div>
+        <div class="readout"><div class="lbl">Heat to coolant</div><div class="val mt-0.5"><span id="coolQin">25.73</span><span class="unit">kW</span></div></div>
+        <div class="readout"><div class="lbl">Radiator heat rejection</div><div class="val mt-0.5"><span id="coolQrad">20.58</span><span class="unit">kW</span></div></div>
+        <div class="readout"><div class="lbl">ECT sensor resistance</div><div class="val mt-0.5"><span id="coolRes">177</span><span class="unit">Ω</span></div></div>
+        <div class="readout"><div class="lbl">ECT signal voltage</div><div class="val mt-0.5"><span id="coolVolt">0.373</span><span class="unit">V</span></div></div>
+      </div>
+
+      <div class="w-full h-[170px] sm:h-[200px] mt-3"><canvas id="chartCoolTrend"></canvas></div>
+    </div>
+  </section>
+
+  <!-- ═══════════ TAB 6: MHEV & DCT ═══════════ -->
+  <section id="tab6" class="tab-content hidden flex-col gap-4">
+    <div class="card px-4 py-4 sm:px-5">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <h3 class="text-sm sm:text-base font-semibold text-slate-900 tracking-tight">48V MHEV power flow</h3>
+        <span id="mhevBadge" class="pill pill-blue">MOTOR ASSIST</span>
+      </div>
+      <div class="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-3 mt-3">
+        <div class="ctl-group">
+          <div class="ctl-head"><label for="ctrlMhevSoc" class="ctl-label">Battery SOC (%)</label><span id="valMhevSoc" class="ctl-val">65 %</span></div>
+          <input type="range" id="ctrlMhevSoc" min="10" max="95" step="1" value="65">
+        </div>
+        <div class="ctl-group">
+          <div class="ctl-head"><label for="ctrlMotorTq" class="ctl-label">Motor torque capacity (N·m)</label><span id="valMotorTq" class="ctl-val">70 N·m</span></div>
+          <input type="range" id="ctrlMotorTq" min="10" max="100" step="1" value="70">
+        </div>
+        <div class="ctl-group">
+          <div class="ctl-head"><label for="ctrlMotorP" class="ctl-label">Motor max power (kW)</label><span id="valMotorP" class="ctl-val">12 kW</span></div>
+          <input type="range" id="ctrlMotorP" min="2" max="25" step="1" value="12">
+        </div>
+        <div class="ctl-group">
+          <div class="ctl-head"><label for="ctrlRegenEff" class="ctl-label">Regeneration efficiency (%)</label><span id="valRegenEff" class="ctl-val">70 %</span></div>
+          <input type="range" id="ctrlRegenEff" min="40" max="90" step="1" value="70">
+        </div>
+        <div class="ctl-group">
+          <div class="ctl-head"><label for="ctrlBrakePedal" class="ctl-label">Brake pedal (%)</label><span id="valBrakePedal" class="ctl-val">0 %</span></div>
+          <input type="range" id="ctrlBrakePedal" min="0" max="100" step="1" value="0">
+        </div>
+        <div class="flex flex-col justify-end min-w-0">
+          <label for="mhevMode" class="ctl-label mb-1">Hybrid mode</label>
+          <span id="valMhevMode" class="hidden">Automatic</span>
+          <select id="mhevMode">
+            <option value="auto" selected>Automatic</option>
+            <option value="assist">Motor assist</option>
+            <option value="regen">Regeneration</option>
+            <option value="engine">Engine only</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2.5 mt-3">
+        <div class="readout"><div class="lbl">Motor torque</div><div class="val mt-0.5"><span id="mhevTorque">0.0</span><span class="unit">N·m</span></div></div>
+        <div class="readout"><div class="lbl">Motor power</div><div class="val mt-0.5"><span id="mhevPower">0.00</span><span class="unit">kW</span></div></div>
+        <div class="readout"><div class="lbl">Battery current (48V nominal)</div><div class="val mt-0.5"><span id="mhevCurrent">0.0</span><span class="unit">A</span></div></div>
+        <div class="readout"><div class="lbl">Battery power</div><div class="val mt-0.5"><span id="mhevBattP">0.00</span><span class="unit">kW</span></div></div>
+      </div>
+    </div>
+
+    <div class="card px-4 py-4 sm:px-5">
+      <h3 class="text-sm sm:text-base font-semibold text-slate-900 tracking-tight">7DCT transmission model</h3>
+      <div class="grid grid-cols-2 gap-3 mt-3">
+        <div class="flex flex-col justify-end min-w-0">
+          <label for="gearSelect" class="ctl-label mb-1">Selected gear</label>
+          <span id="valGear" class="hidden">5th · 0.822</span>
+          <select id="gearSelect">
+            <option value="0">1st · 3.929</option>
+            <option value="1">2nd · 2.318</option>
+            <option value="2">3rd · 2.043</option>
+            <option value="3">4th · 1.070</option>
+            <option value="4" selected>5th · 0.822</option>
+            <option value="5">6th · 0.884</option>
+            <option value="6">7th · 0.721</option>
+          </select>
+        </div>
+        <div class="ctl-group">
+          <div class="ctl-head"><label for="ctrlFinalDrive" class="ctl-label">Final drive ratio</label><span id="valFinalDrive" class="ctl-val">3.65</span></div>
+          <input type="range" id="ctrlFinalDrive" min="2.50" max="5.00" step="0.01" value="3.65">
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2.5 mt-3">
+        <div class="readout"><div class="lbl">Selected ratio</div><div class="val mt-0.5"><span id="dctRatio">0.822</span></div></div>
+        <div class="readout"><div class="lbl">Input shaft RPM</div><div class="val mt-0.5"><span id="dctInputRpm">616</span><span class="unit">rpm</span></div></div>
+        <div class="readout"><div class="lbl">Clutch slip (rpm)</div><div class="val mt-0.5"><span id="dctSlip">1534</span><span class="unit">rpm</span></div></div>
+        <div class="readout"><div class="lbl">Output torque estimate</div><div class="val mt-0.5"><span id="dctOutTorque">263.3</span><span class="unit">N·m</span></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════ TAB 7: SENSORS & ECU ═══════════ -->
+  <section id="tab7" class="tab-content hidden flex-col gap-4">
+    <div class="card px-4 py-4 sm:px-5">
+      <h3 class="text-sm sm:text-base font-semibold text-slate-900 tracking-tight">Sensor telemetry</h3>
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mt-3">
+        <div class="readout"><div class="lbl">TPS1</div><div class="val mt-0.5"><span id="tps1Val">2.50</span><span class="unit">V</span></div></div>
+        <div class="readout"><div class="lbl">TPS2</div><div class="val mt-0.5"><span id="tps2Val">2.75</span><span class="unit">V</span></div></div>
+        <div class="readout"><div class="lbl">MAP sensor</div><div class="val mt-0.5"><span id="mapVal">2.07</span><span class="unit">V / 98.0 kPa</span></div></div>
+        <div class="readout"><div class="lbl">ECT sensor</div><div class="val mt-0.5"><span id="ectVal">0.373</span><span class="unit">V / 98.4 °C</span></div></div>
+        <div class="readout"><div class="lbl">CKP frequency (60-2)</div><div class="val mt-0.5"><span id="ckpVal">2078.3</span><span class="unit">Hz</span></div></div>
+        <div class="readout"><div class="lbl">CMP reference</div><div class="val mt-0.5"><span id="cmpVal">35.8</span><span class="unit">Hz</span></div></div>
+      </div>
+    </div>
+
+    <div class="card px-4 py-4 sm:px-5">
+      <h3 class="text-sm sm:text-base font-semibold text-slate-900 tracking-tight">Fault injection and ECU torque protection</h3>
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-3 mt-3">
+        <div class="flex flex-col justify-end min-w-0">
+          <label for="faultChannel" class="ctl-label mb-1">Fault channel</label>
+          <select id="faultChannel">
+            <option value="none" selected>No fault</option>
+            <option value="map">MAP</option>
+            <option value="tps">TPS mismatch</option>
+            <option value="ect">ECT</option>
+            <option value="ckp">CKP dropout</option>
+            <option value="cmp">CMP phase</option>
+            <option value="knock">Knock</option>
+            <option value="rail">Fuel rail</option>
+            <option value="misfire">Misfire</option>
+          </select>
+        </div>
+        <div class="flex flex-col justify-end min-w-0">
+          <label for="faultTypeSel" class="ctl-label mb-1">Fault type</label>
+          <select id="faultTypeSel">
+            <option value="open" selected>Open circuit</option>
+            <option value="short">Short to ground</option>
+            <option value="drift">Plausibility / drift</option>
+          </select>
+        </div>
+        <div class="ctl-group col-span-2 sm:col-span-1">
+          <div class="ctl-head"><label for="faultSeverity" class="ctl-label">Fault severity (%)</label><span id="valFaultSev" class="ctl-val">85 %</span></div>
+          <input type="range" id="faultSeverity" min="0" max="100" step="1" value="85">
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-3">
+        <div class="readout"><div class="lbl">ECU strategy</div><div id="ecuStrategy" class="pill pill-green mt-1.5 w-max">NORMAL</div></div>
+        <div class="readout"><div class="lbl">Torque limitation</div><div class="val mt-0.5"><span id="torqueLimitPct">0.0</span><span class="unit">%</span></div></div>
+      </div>
+      <div id="faultAlert" class="mt-2.5 px-3.5 py-3 rounded-xl bg-emerald-50 border border-emerald-200 text-[12.5px] text-emerald-800 leading-relaxed" dir="ltr" style="text-align:left">
+        No fault injected — ECU supervisory layer reports normal operation across monitored channels.
+      </div>
+    </div>
+
+    <div class="card px-4 py-4 sm:px-5">
+      <h3 class="text-sm sm:text-base font-semibold text-slate-900 tracking-tight">ECU calculated outputs</h3>
+      <div class="grid grid-cols-2 gap-2.5 mt-3">
+        <div class="readout"><div class="lbl">Driver torque request</div><div class="val mt-0.5"><span id="ecuTqReq">93.4</span><span class="unit">N·m</span></div></div>
+        <div class="readout"><div class="lbl">Allowed torque</div><div class="val mt-0.5"><span id="ecuTqAllow">77.5</span><span class="unit">N·m</span></div></div>
+        <div class="readout"><div class="lbl">Throttle target</div><div class="val mt-0.5"><span id="ecuThrTarget">31.5</span><span class="unit">%</span></div></div>
+        <div class="readout"><div class="lbl">Boost target</div><div class="val mt-0.5"><span id="ecuBoostTarget">12.5</span><span class="unit">kPa</span></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════ TAB 8: OSCILLOSCOPE ═══════════ -->
+  <section id="tab8" class="tab-content hidden flex-col gap-4">
+    <div class="card px-4 py-4 sm:px-5">
+      <div class="flex items-center justify-between gap-2">
+      <h3 class="text-sm sm:text-base font-semibold text-slate-900 tracking-tight">Dynamic oscilloscope</h3>
+    </div>
+    <div class="btn-toolbar mt-3">
+      <button id="scopeBtnPause" class="btn btn-outline-gray">⏸ Pause / ▶ Resume</button>
+      <button id="scopeBtnFreeze" class="btn btn-outline-gray">❄ Freeze trace</button>
+      <button id="scopeBtnClear" class="btn btn-outline-gray">✕ Clear trace</button>
+      <button id="scopeBtnReset" class="btn btn-outline-gray">↺ Reset faults</button>
+    </div>
+
+      <div class="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-3 mt-3">
+        <div class="flex flex-col justify-end min-w-0">
+          <label for="scopeChannel" class="ctl-label mb-1">Channel</label>
+          <select id="scopeChannel">
+            <option value="CKP" selected>CKP</option>
+            <option value="CMP">CMP</option>
+            <option value="TPS1">TPS1</option>
+            <option value="TPS2">TPS2</option>
+            <option value="MAP">MAP</option>
+            <option value="ECT">ECT</option>
+            <option value="RAIL">Rail pressure</option>
+            <option value="INJ">Injector pulse</option>
+          </select>
+        </div>
+        <div class="flex flex-col justify-end min-w-0">
+          <label for="scopeTimebase" class="ctl-label mb-1">Timebase</label>
+          <select id="scopeTimebase">
+            <option value="100" selected>100 ms/div</option>
+            <option value="50">50 ms/div</option>
+            <option value="20">20 ms/div</option>
+            <option value="10">10 ms/div</option>
+          </select>
+        </div>
+        <div class="flex flex-col justify-end min-w-0">
+          <label for="scopeSigType" class="ctl-label mb-1">Signal type</label>
+          <select id="scopeSigType">
+            <option value="native" selected>Native</option>
+            <option value="analog">Analog</option>
+            <option value="digital">Digital</option>
+          </select>
+        </div>
+        <div class="flex flex-col justify-end min-w-0">
+          <label for="scopeVScale" class="ctl-label mb-1">Voltage scale</label>
+          <select id="scopeVScale">
+            <option value="1">1 V/div</option>
+            <option value="2" selected>2 V/div</option>
+            <option value="5">5 V/div</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="scope-screen w-full h-[230px] sm:h-[280px] mt-3 relative"><canvas id="scopeCanvas" class="w-full h-full"></canvas></div>
+
+      <div class="flex flex-wrap items-center justify-between gap-2 mt-2 text-xs">
+        <span class="ctl-label" id="scopeBarLeft">CKP — generated waveform</span>
+        <span class="ctl-val" id="scopeBarRight">2078.3 Hz</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════ PERSISTENT BOTTOM VERIFICATION CARD ═══════════ -->
+  <section class="card px-4 py-4 sm:px-5">
+    <h3 class="text-sm sm:text-base font-semibold text-slate-900 tracking-tight">Governing model equations</h3>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 mt-3">
+      <div class="eq-box"><div class="lbl mb-1.5">1 · Displacement</div><div class="eq">V_d = 4(πB²/4)·S ≈ 0.001598 m³</div></div>
+      <div class="eq-box"><div class="lbl mb-1.5">2 · Air mass flow</div><div class="eq">ṁ_air ≈ ηᵥ · ρ_m · V_d · N / 120</div></div>
+      <div class="eq-box"><div class="lbl mb-1.5">3 · Brake power</div><div class="eq">P_b = T_b · (2πN / 60)</div></div>
+      <div class="eq-box"><div class="lbl mb-1.5">4 · Mean effective pressure</div><div class="eq">BMEP = 4πT_b / V_d ;&nbsp;&nbsp;IMEP = BMEP / η_m</div></div>
+      <div class="eq-box lg:col-span-2"><div class="lbl mb-1.5">5 · Slider-crank kinematics</div><div class="eq">x(θ) = r·((1 − cosθ) + (1/λ)·(1 − √(1 − λ²sin²θ))),&nbsp;&nbsp;λ = r/L</div></div>
+      <div class="eq-box"><div class="lbl mb-1.5">6 · Ideal-gas charge density</div><div class="eq">ρ = P / (R·T),&nbsp;&nbsp;R_air = 287.05 J/(kg·K)</div></div>
+      <div class="eq-box lg:col-span-2"><div class="lbl mb-1.5">7 · Wiebe mass fraction burned</div><div class="eq">x_b(θ) = 1 − exp[ −a·((θ − θ₀)/Δθ)^(m+1) ]</div></div>
+    </div>
+  </section>
+
+  <footer class="py-4 border-t border-slate-200 text-center text-xs text-slate-500" dir="ltr">
+    Powertrain & Engine Management Simulator · Real-Time Telemetry & Dynamics
+  </footer>
+</div>
+
+<!-- ═══════════════════ JAVASCRIPT CORE — PART A: STATE & PHYSICS ═══════════════════ -->
+<script>
+/* =====================================================================
+   EDS2026 MASTER UNIFIED SIMULATOR — Part A: state, geometry & physics
+   Kia Sportage NQ5E MY2024 · Smartstream G4FP 1.6 T-GDI MHEV · 7DCT · 2WD
+   ===================================================================== */
+'use strict';
+const $id = (id) => document.getElementById(id);
+const vNum = (id) => { const el = $id(id); return el ? +el.value : 0; };
+const txt = (id, s) => { const el = $id(id); if (el && el.textContent !== s) el.textContent = s; };
+const fmt = (n, d) => { const t = Math.pow(10, d); return Math.round(n * t) / t; };
+const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
+
+/* ---------- Physical constants (G4FP 1.6 T-GDI) ---------- */
+const BORE = 75.6;                 // mm
+const STROKE = 89.0;               // mm
+const CRANK_R = STROKE / 2;        // 44.5 mm
+const VD_TOTAL = 0.001598;         // m³ (1598 cc)
+const VD_CYL_CC = 399.5;           // cm³ per cylinder
+const BORE_AREA_CM2 = Math.PI * (BORE / 10) * (BORE / 10) / 4; // ≈ 44.9 cm²
+const R_AIR = 287.05;              // J/(kg·K)
+const GAMMA_AIR = 1.4;
+const NTC_R25 = 2500, NTC_B = 3950, NTC_T25 = 298.15, NTC_PULLUP = 2200;
+const DCT_RATIOS = [3.929, 2.318, 2.043, 1.070, 0.822, 0.884, 0.721];
+const TIRE_RADIUS = 0.31;          // m
+const DUCT_AREA = 0.00917;         // m² mean charge-passage area (est.)
+
+/* ---------- Baseline calibrated defaults ---------- */
+const DEF = {
+  ctrlRpm: 2150, ctrlAps: 38, ctrlThrottle: 50, ctrlSpeed: 24,
+  ctrlPamb: 85.3, ctrlTamb: 10, ctrlPr: 1.48, ctrlEtaC: 76,
+  ctrlEtaIc: 44, ctrlDropIc: 8.0, ctrlFilterLoss: 1.5, ctrlDuctLoss: 2.0,
+  ctrlEtaV: 103, ctrlCr: 12.0, ctrlRod: 140, ctrlCrank: 0,
+  ctrlIvo: 10, ctrlIvc: 40, ctrlEvo: 45, ctrlEvc: 10, ctrlMaxLift: 8,
+  gdiLambda: 0.95, gdiLhv: 41.7, gdiRail: 120, gdiFlow: 10, gdiSoi: 300,
+  gdiDead: 0.8, gdiSpark: 15, gdiDur: 45, gdiEff: 92,
+  ctrlCoolInit: 90, ctrlCoolCap: 55, ctrlRadUa: 420, fanMode: 'auto',
+  ctrlMhevSoc: 65, ctrlMotorTq: 70, ctrlMotorP: 12, ctrlRegenEff: 70,
+  ctrlBrakePedal: 0, mhevMode: 'auto', gearSelect: 4, ctrlFinalDrive: 3.65,
+  faultChannel: 'none', faultTypeSel: 'open', faultSeverity: 85,
+  scopeTimebase: '100'
+};
+
+/* ---------- Live state ---------- */
+const state = {
+  running: true, autoAngle: true,
+  crank: 0,                       // deg, 0–720 (local cylinder frame, 0 = intake TDC of Cyl 1 reference)
+  simTime: 0,                     // simulated seconds (advances when running)
+  ect: 98.4, fanState: 'OFF', fanLow: false, fanHigh: false,
+  coolHistory: [], coolTime: [],
+  soc: 65, clutchTemp: 45,
+  lastDtdt: 0, lastBattKw: 0,
+  scopePaused: false, scopeFrozen: false, scopeTime: 0,
+  P: { P0: 85.3, P1: 83.8, P2: 83.8, P3: 124.0, P4: 116.0, P5: 114.0, P6: 98.0, P7: 96.8, P8: 96.8,
+       T0: 283.15, T2: 283.15, T3: 327.0, T4: 310.5, T5: 310.5, rho6: 1.1 },
+  out: {},                        // latest computed outputs
+  selectedCyl: 1
+};
+
+/* ---------- Slider-crank kinematics ---------- */
+function pistonDispMm(phiDeg, rodMm) {          // phi: 0 at TDC, 180 at BDC
+  const th = phiDeg * Math.PI / 180;
+  const r = CRANK_R, l = rodMm, lam = r / l;
+  return r * ((1 - Math.cos(th)) + (1 / lam) * (1 - Math.sqrt(1 - lam * lam * Math.sin(th) * Math.sin(th))));
+}
+function cylVolumeCc(phiDeg, cr) {              // phi: 0 at TDC
+  const vc = VD_CYL_CC / (cr - 1);
+  return vc + BORE_AREA_CM2 * (pistonDispMm(phiDeg, vNum('ctrlRod')) / 10);
+}
+
+/* ---------- Master read + air-path thermodynamics ---------- */
+function readInputs() {
+  const rpm = vNum('ctrlRpm'), aps = vNum('ctrlAps'), thr = vNum('ctrlThrottle'), spd = vNum('ctrlSpeed');
+  const pamb = vNum('ctrlPamb'), tamb = vNum('ctrlTamb');
+  const pr = vNum('ctrlPr'), etaC = vNum('ctrlEtaC') / 100, etaIc = vNum('ctrlEtaIc') / 100;
+  const dropIc = vNum('ctrlDropIc'), filt = vNum('ctrlFilterLoss'), duct = vNum('ctrlDuctLoss');
+  const etaV = vNum('ctrlEtaV') / 100, cr = vNum('ctrlCr'), rod = vNum('ctrlRod');
+
+  // Station pressures P0..P8
+  const T0 = tamb + 273.15;
+  const P0 = pamb, P1 = Math.max(20, P0 - filt), P2 = P1;
+  // Compressor spool: full PR from ~1900 rpm on; weak below
+  const spool = clamp(rpm / 1900, 0.32, 1);
+  const effPr = 1 + (pr - 1) * spool;
+  const P3 = P2 * effPr;
+  const T3k = T0 * (1 + (1 / Math.max(0.35, etaC)) * (Math.pow(effPr, (GAMMA_AIR - 1) / GAMMA_AIR) - 1));
+  const P4 = Math.max(20, P3 - dropIc);
+  const T4k = T3k - etaIc * (T3k - T0);
+  const P5 = Math.max(20, P4 - duct);
+  // Throttle / manifold (MAP): charge mixing + part-throttle vacuum closure
+  const fTh = Math.pow(clamp(thr / 100, 0, 1), 1.18);
+  let P6 = P0 * (1 - fTh) + P5 * fTh;
+  if (thr / 100 < 0.42) P6 *= (0.55 + 0.45 * (thr / 100) / 0.42);     // idle/decel vacuum
+  P6 = Math.max(30, Math.min(P5, P6));
+  const P7 = P6 - 1.2, P8 = P7;
+
+  const Tm = Math.max(T0, T4k);                                       // manifold temp
+  const rho6 = (P6 * 1000) / (R_AIR * Tm);
+  const mAirG = (rpm / 120) * VD_TOTAL * rho6 * etaV * 1000;          // g/s
+  const airVel = (mAirG / 1000) / (rho6 * DUCT_AREA);                 // m/s mean duct
+
+  state.P = { P0, P1, P2, P3, P4, P5, P6, P7, P8, T0, T2: T0, T3: T3k, T4: T4k, T5: Tm, rho6 };
+
+  return { rpm, aps, thr, spd, pamb, tamb, pr, etaC, etaIc, dropIc, filt, duct, etaV, cr, rod,
+           P0, P1, P2, P3, P4, P5, P6, P7, P8, T0, Tm, rho6, mAirG, airVel };
+}
+
+/* ---------- ECU supervisory layer ---------- */
+const FAULT_RED = { none: 0, map: 18, tps: 25, ect: 15, ckp: 80, cmp: 45, knock: 20, rail: 30, misfire: 55 };
+const FAULT_MSG = {
+  none: 'No fault injected — ECU supervisory layer reports normal operation across monitored channels.',
+  map: 'MAP signal fault injected — boost and load estimation run degraded; torque strategy limited.',
+  tps: 'TPS plausibility mismatch injected — throttle authority reduced while cross-check values disagree.',
+  ect: 'ECT circuit fault injected — temperature estimate unreliable; protective fallback counter applies.',
+  ckp: 'CKP dropout injected — crank position reference unreliable; severe-limit (LIMP) style protection engaged.',
+  cmp: 'CMP phase fault injected — sequential injection and cam reference are restricted.',
+  knock: 'Knock event injected — conservative ignition retard and torque limitation applied.',
+  rail: 'Fuel rail pressure fault injected — injection delivery capability assumed restricted.',
+  misfire: 'Misfire event injected — torque reduction with catalyst-protection oriented strategy.'
+};
+function computeECU(inp) {
+  const chEl = $id('faultChannel'), tyEl = $id('faultTypeSel');
+  const fch = chEl ? chEl.value : 'none';
+  const fty = tyEl ? tyEl.value : 'open';
+  const sev = vNum('faultSeverity') / 100;
+
+  // Driver torque request per spec
+  const rpmDenom = clamp(1 - 5.5e-8 * Math.pow(inp.rpm - 3300, 2), 0.45, 1);
+  const tDriver = 265 * (inp.aps / 100) * rpmDenom;
+
+  // Torque limitations: fault reduction + thermal clamp
+  let thermalLim = 0;
+  if (state.ect > 105) thermalLim = Math.min(65, (state.ect - 105) * 3);
+  const faultLim = Math.min(90, FAULT_RED[fch] * sev);
+  const limitPct = Math.min(90, Math.max(thermalLim, faultLim));
+
+  const allowFrac = 1 - limitPct / 100;
+  const tAllowed = tDriver * allowFrac;
+  const thrTarget = clamp((inp.aps / 100) * (1 - limitPct / 100) * 100, 0, 100);
+  const boostTarget = Math.max(0, state.P.P6 - state.P.P0);
+
+  let strategy = 'NORMAL', pill = 'pill-green';
+  if (fch === 'ckp' && fty === 'open') { strategy = 'TORQUE LIMITED'; pill = 'pill-red'; }
+  else if (limitPct > 0) { strategy = 'TORQUE LIMITED'; pill = 'pill-amber'; }
+
+  const isLimp = (fch === 'ckp' && fty === 'open');
+  const alertHtml = fch === 'none'
+    ? FAULT_MSG.none
+    : ('<b>' + (isLimp ? 'LIMP HOME' : 'TORQUE LIMITED') + ':</b> ' + FAULT_MSG[fch] + ' (type: ' + tyEl.options[tyEl.selectedIndex].text + ', severity ' + Math.round(sev * 100) + '%).');
+
+  return { fch, fty, sev, tDriver, tAllowed, allowFrac, limitPct, thrTarget, boostTarget, strategy, pill, isLimp, alertHtml };
+}
+
+/* ---------- GDI fuel & combustion ---------- */
+function computeFuel(inp, ecu) {
+  const lambda = vNum('gdiLambda'), lhv = vNum('gdiLhv'), rail = vNum('gdiRail');
+  const injFlow = vNum('gdiFlow'), dead = vNum('gdiDead'), spark = vNum('gdiSpark');
+  const dur = vNum('gdiDur'), eff = vNum('gdiEff') / 100, soi = vNum('gdiSoi');
+
+  const stoich = 14.7, afr = stoich * lambda;
+  const fuelKgH = (inp.mAirG / afr) * 3.6;
+  const injPerSec = 4 * (inp.rpm / 120);                              // 4-cyl sequential
+  const fuelMg = inp.mAirG / injPerSec / afr * 1000;                  // mg per cylinder-cycle
+  const actFlow = Math.max(0.5, injFlow * Math.sqrt(rail / 120));     // √ΔP law (120 bar ref)
+  const pwMs = (fuelMg / 1000) / actFlow * 1000 + dead;
+  const energyKw = (fuelKgH / 3600) * lhv * 1000;                     // kg/s × MJ/kg → MW → ×1000 = kW
+  return { lambda, lhv, rail, injFlow, dead, spark, dur, eff, soi, stoich, afr, fuelKgH, fuelMg, pwMs, energyKw };
+}
+
+/* ---------- Cooling (lumped capacitance) ---------- */
+function coolingStep(inp, fuel, dt) {
+  const tEngine = inp.rpm / 60 * 2 * Math.PI;
+  const brakePwKw = (state.out.brakeTorque * tEngine) / 1000;
+  const load = clamp(inp.aps / 100, 0, 1);
+  const qInKw = fuel.energyKw * (0.22 + 0.12 * load);
+  let fan = state.fanState;
+  const mode = $id('fanMode') ? $id('fanMode').value : 'auto';
+  // Fan hysteresis in AUTO
+  if (mode === 'off') fan = 'OFF';
+  else if (mode === 'low') fan = 'LOW';
+  else if (mode === 'high') fan = 'HIGH';
+  else {
+    if (!state.fanLow && state.ect >= 96) state.fanLow = true;
+    if (state.fanLow && state.ect <= 92) state.fanLow = false;
+    if (!state.fanHigh && state.ect >= 103) state.fanHigh = true;
+    if (state.fanHigh && state.ect <= 98) state.fanHigh = false;
+    fan = state.fanHigh ? 'HIGH' : (state.fanLow ? 'LOW' : 'OFF');
+  }
+  state.fanState = fan;
+  const fFan = fan === 'HIGH' ? 1.65 : fan === 'LOW' ? 1.28 : 1.0;
+  const fRam = 0.22 + 0.78 * Math.min(1, inp.spd / 90);
+  const ua = vNum('ctrlRadUa');
+  const qRadKw = ua * fRam * fFan * Math.max(0, state.ect - inp.tamb) / 1000;
+  const qAmbKw = 25 * Math.max(0, state.ect - inp.tamb) / 1000;       // external losses
+  const cap = vNum('ctrlCoolCap') * 1000;                             // J/K
+  const dtdt = (qInKw - qRadKw - qAmbKw) * 1000 / cap;
+  state.ect = clamp(state.ect + dtdt * dt * 3.0, -20, 140);
+  state.lastDtdt = dtdt;
+
+  // NTC thermistor
+  const Tk = state.ect + 273.15;
+  const rNtc = NTC_R25 * Math.exp(NTC_B * (1 / Tk - 1 / NTC_T25));
+  const vNtc = 5.0 * rNtc / (rNtc + NTC_PULLUP);
+  return { qInKw, qRadKw, fan, rNtc, vNtc, dtdt };
+}
+</script>
+<!-- ═══════════════════ JAVASCRIPT — PART B: POWERTRAIN & DOM ═══════════════════ -->
+<script>
+'use strict';
+
+/* ---------- 48V MHEV + 7DCT ---------- */
+function computeMhevDct(inp, ecu) {
+  const mode = $id('mhevMode') ? $id('mhevMode').value : 'auto';
+  const soc = state.soc;
+  const omega = 2 * Math.PI * inp.rpm / 60;
+  const brakePct = vNum('ctrlBrakePedal');
+
+  const wheelOmega = (inp.spd / 3.6) / TIRE_RADIUS;
+  const wheelRpm = wheelOmega * 60 / (2 * Math.PI);
+  const gearIdx = $id('gearSelect') ? +$id('gearSelect').value : 4;
+  const gr = DCT_RATIOS[gearIdx] || 0.822;
+  const fd = vNum('ctrlFinalDrive');
+  const inputRpm = wheelRpm * gr * fd;
+  const rawSlip = Math.abs(inp.rpm - inputRpm);
+  const slip = rawSlip < 40 ? 0 : rawSlip;                            // locked above sync threshold
+
+  const engaged = slip < 40;                                            // clutch locked above sync threshold
+  let motorTq = 0, regenKw = 0;
+  const tqCapMax = vNum('ctrlMotorTq'), pMaxKw = vNum('ctrlMotorP'), regenEff = vNum('ctrlRegenEff') / 100;
+  const wantAssist = mode === 'assist' || (mode === 'auto' && inp.aps > 25);
+  if (mode !== 'engine' && soc >= 20 && wantAssist && engaged) {
+    motorTq = Math.min(tqCapMax * (inp.aps / 100), (pMaxKw * 1000) / Math.max(omega, 20));
+  }
+  const wantRegen = mode === 'regen' || (mode === 'auto' && brakePct > 10);
+  if (wantRegen && soc <= 95 && inp.spd > 2) {
+    regenKw = Math.min(pMaxKw, (inp.spd / 180) * pMaxKw * (brakePct / 100) * regenEff);
+  }
+
+  const motorKw = (motorTq * omega) / 1000;
+  const battKw = regenKw > 0 ? -regenKw : motorKw / 0.92;             // positive = discharge
+  const battA = battKw * 1000 / 48;
+
+  const etaDct = 0.94;
+  const effectiveIce = state.out.brakeTorque;
+  const effectiveMotor = engaged ? motorTq : 0;
+  const outTorque = (effectiveIce + effectiveMotor) * gr * fd * etaDct;
+
+  let badge = 'STANDBY', badgeClass = 'pill pill-blue';
+  if (regenKw > 0.05) { badge = 'REGENERATION'; badgeClass = 'pill pill-green'; }
+  else if (motorKw > 0.05) { badge = 'MOTOR ASSIST'; badgeClass = 'pill pill-blue'; }
+  else if (mode === 'engine') { badge = 'ENGINE ONLY'; badgeClass = 'pill pill-amber'; }
+
+  return { mode, soc, motorTq, motorKw, regenKw, battKw, battA, slip, inputRpm, gr, fd, outTorque, badge, badgeClass, gearIdx };
+}
+
+/* ---------- In-cylinder instantaneous state ---------- */
+function cylStateAt(phi, inp, fuel, ecu) {
+  phi = ((phi % 720) + 720) % 720;
+  const vc = VD_CYL_CC / (inp.cr - 1);
+  const dispMm = pistonDispMm(phi, inp.rod);
+  const vol = vc + BORE_AREA_CM2 * (dispMm / 10);
+  const volBdc = vc + BORE_AREA_CM2 * (STROKE / 10);
+  const ratio = volBdc / vol;                                         // ≥ 1 inside cylinder
+
+  let phase, P, T;
+  if (phi < 180) {                                                    // INTAKE
+    phase = 'INTAKE'; P = inp.P8 * 0.97; T = inp.Tm;
+  } else if (phi < 360) {                                             // COMPRESSION
+    phase = 'COMPRESSION';
+    P = inp.P8 * Math.pow(ratio, 1.32);
+    T = inp.Tm * Math.pow(ratio, 0.32);
+  } else if (phi < 540) {                                             // POWER (firing TDC = 360)
+    phase = 'POWER';
+    const ignPhi = 360 - fuel.spark;
+    const frac = Math.max(0, (phi - ignPhi) / fuel.dur);
+    const xb = phi >= ignPhi ? (1 - Math.exp(-5.0 * Math.pow(Math.min(1, frac), 3))) : 0;
+    const Pbase = inp.P8 * Math.pow(ratio, 1.32);
+    const load = clamp((inp.aps / 100) * clamp(inp.P6 / 101.3, 0, 1.3), 0, 1.3) * ecu.allowFrac;
+    P = Pbase * (1 + 2.6 * xb * load * fuel.eff);
+    T = Math.min(2600, inp.Tm * Math.pow(ratio, 0.32) * (1 + 2.3 * xb * load * fuel.eff));
+  } else {                                                            // EXHAUST
+    phase = 'EXHAUST'; P = inp.P0 * 1.12; T = 950;
+  }
+  return { phase, P, T, vol, dispMm };
+}
+
+/* ---------- Master update: all readouts ---------- */
+const STATIONS = [
+  ['P0', 'Ambient / pre-filter'], ['P1', 'Post-filter'], ['P2', 'Compressor inlet'],
+  ['P3', 'Compressor outlet'], ['P4', 'Post-intercooler'], ['P5', 'Intake duct'],
+  ['P6', 'Post-throttle / manifold (MAP)'], ['P7', 'Intake port / valve'], ['P8', 'Cylinder intake reference']
+];
+
+function updateDOM(inp, ecu, fuel, cool, mhev) {
+  // ----- Header -----
+  txt('sumRpm', String(Math.round(inp.rpm)));
+  txt('sumMap', inp.P6.toFixed(1));
+  txt('sumEct', state.ect.toFixed(1));
+  const pill = $id('statePill');
+  let pillCls = 'pill pill-green', pillTxt = 'SIMULATING';
+  if (!state.running) { pillCls = 'pill pill-amber'; pillTxt = 'PAUSED'; }
+  else if (ecu.limitPct > 0) { pillCls = ecu.isLimp ? 'pill pill-red' : 'pill pill-amber'; pillTxt = 'TORQUE LIMITED'; }
+  if (pill) { pill.className = pillCls; txt('statePill', pillTxt); }
+
+  // ----- Master slider value badges -----
+  txt('valRpm', Math.round(inp.rpm) + ' rpm');
+  txt('valAps', Math.round(inp.aps) + ' %');
+  txt('valThrottle', Math.round(inp.thr) + ' %');
+  txt('valSpeed', Math.round(inp.spd) + ' km/h');
+  txt('valPamb', inp.pamb.toFixed(1) + ' kPa');
+  txt('valTamb', Math.round(inp.tamb) + ' °C');
+  txt('valPr', inp.pr.toFixed(2));
+  txt('valEtaC', Math.round(inp.etaC * 100) + ' %');
+  txt('valEtaIc', Math.round(inp.etaIc * 100) + ' %');
+  txt('valDropIc', inp.dropIc.toFixed(1) + ' kPa');
+  txt('valFilterLoss', inp.filt.toFixed(1) + ' kPa');
+  txt('valDuctLoss', inp.duct.toFixed(1) + ' kPa');
+  txt('valEtaV', Math.round(inp.etaV * 100) + ' %');
+  txt('valCr', inp.cr.toFixed(1) + ' :1');
+  txt('valRod', Math.round(inp.rod) + ' mm');
+  txt('valCrank', Math.round(state.crank) + ' °');
+
+  // ----- Engine outputs -----
+  const brakeTorque = ecu.tAllowed;
+  const omega = 2 * Math.PI * inp.rpm / 60;
+  const brakeKw = (brakeTorque * omega) / 1000;
+  const bmep = (4 * Math.PI * brakeTorque) / VD_TOTAL / 1e5;
+  state.out.brakeTorque = brakeTorque;
+  state.out.brakeKw = brakeKw;
+
+  txt('t1Torque', brakeTorque.toFixed(1));
+  txt('t1Power', brakeKw.toFixed(1));
+  txt('t1AirMass', inp.mAirG.toFixed(2));
+  txt('t1Lambda', fuel.lambda.toFixed(2));
+  txt('t1FuelFlow', fuel.fuelKgH.toFixed(2));
+  txt('t1Density', inp.rho6.toFixed(3));
+  txt('t1Bmep', bmep.toFixed(2));
+  const stEl = $id('t1State');
+  if (stEl) {
+    const s = ecu.isLimp ? 'LIMP HOME' : (ecu.limitPct > 0 ? 'TORQUE LIMITED' : 'NORMAL');
+    txt('t1State', s);
+    stEl.className = 'pill mt-1.5 w-max ' + (ecu.isLimp ? 'pill-red' : ecu.limitPct > 0 ? 'pill-amber' : 'pill-green');
+  }
+
+  // ----- Air-path chips + Tab 2 -----
+  const ps = [inp.P0, inp.P1, inp.P2, inp.P3, inp.P4, inp.P5, inp.P6, inp.P7, inp.P8];
+  for (let i = 0; i < 9; i++) {
+    txt('chipP' + i, ps[i].toFixed(1));
+    const chip = $id('chipP' + i + '-wrap');
+    if (chip) chip.className = 'st-chip' + (ps[i] >= 105 ? ' boost' : (i <= 1 ? ' public' : ''));
+  }
+  txt('t2Map', inp.P6.toFixed(1));
+  txt('t2MapGauge', (inp.P6 - inp.P0).toFixed(1));
+  txt('t2Flow', inp.mAirG.toFixed(2));
+  txt('t2Vel', inp.airVel.toFixed(1));
+  txt('t2Den', inp.rho6.toFixed(3));
+
+  const tbody = $id('stationsBody');
+  if (tbody) {
+    let html = '';
+    STATIONS.forEach(function (st) {
+      const p = state.P['P' + st[0].slice(1)];
+      html += '<tr><td class="font-bold text-sky-800" dir="ltr">' + st[0] + '</td><td>' + st[1] + '</td>' +
+              '<td class="num">' + p.toFixed(1) + '</td></tr>';
+    });
+    if (!tbody.dataset.solid) { tbody.dataset.solid = '1'; }
+    tbody.innerHTML = html;
+  }
+
+  // ----- Tab 3: valve slider badges -----
+  txt('valIvo', vNum('ctrlIvo') + ' °');
+  txt('valIvc', vNum('ctrlIvc') + ' °');
+  txt('valEvo', vNum('ctrlEvo') + ' °');
+  txt('valEvc', vNum('ctrlEvc') + ' °');
+  txt('valMaxLift', vNum('ctrlMaxLift') + ' mm');
+
+  // Cylinder inspector (local cylinder frame)
+  const offs = { 1: 0, 3: 180, 4: 360, 2: 540 };
+  const cyl = +($id('selectCylinder') ? $id('selectCylinder').value : 1);
+  state.selectedCyl = cyl;
+  // crank state.crank: 0..720 measured so that Cyl-1 firing TDC = 360 (intake-TDC frame)
+  const localPhi = (state.crank - 360 - offs[cyl] + 720 * 3) % 720;    // 0 = intake TDC of selected cyl
+  const cs = cylStateAt(localPhi, inp, fuel, ecu);
+  txt('cPhase', cs.phase);
+  txt('cAngle', localPhi.toFixed(1));
+  txt('cDisp', cs.dispMm.toFixed(1));
+  txt('cVol', cs.vol.toFixed(1));
+  txt('cPress', (cs.P / 100).toFixed(2));
+  txt('cTemp', String(Math.round(cs.T)));
+
+  // ----- Tab 4: GDI readouts -----
+  txt('valGdiLambda', fuel.lambda.toFixed(2));
+  txt('valGdiLhv', fuel.lhv.toFixed(1));
+  txt('valGdiRail', Math.round(fuel.rail) + ' bar');
+  txt('valGdiFlow', Math.round(fuel.injFlow) + ' g/s');
+  txt('valGdiSoi', Math.round(fuel.soi) + ' °');
+  txt('valGdiDead', fuel.dead.toFixed(2) + ' ms');
+  txt('valGdiSpark', fuel.spark.toFixed(1) + ' °');
+  txt('valGdiDur', Math.round(fuel.dur) + ' °');
+  txt('valGdiEff', Math.round(fuel.eff * 100) + ' %');
+  txt('gdiAfrStoich', fuel.stoich.toFixed(1));
+  txt('gdiAfr', fuel.afr.toFixed(2));
+  txt('gdiFuelCyl', fuel.fuelMg.toFixed(2));
+  txt('gdiPw', fuel.pwMs.toFixed(2));
+  txt('gdiFlowKgH', fuel.fuelKgH.toFixed(2));
+  txt('gdiEnergy', fuel.energyKw.toFixed(1));
+
+  // ----- Tab 5: cooling -----
+  txt('valCoolInit', vNum('ctrlCoolInit') + ' °C');
+  txt('valCoolCap', vNum('ctrlCoolCap') + ' kJ/K');
+  txt('valRadUa', vNum('ctrlRadUa') + ' W/K');
+  txt('coolEct', state.ect.toFixed(1));
+  txt('coolFan', cool.fan);
+  const fanEl = $id('coolFan');
+  if (fanEl) fanEl.style.color = cool.fan === 'HIGH' ? '#b91c1c' : (cool.fan === 'LOW' ? '#b45309' : '#15803d');
+  txt('coolQin', cool.qInKw.toFixed(2));
+  txt('coolQrad', cool.qRadKw.toFixed(2));
+  txt('coolRes', String(Math.round(cool.rNtc)));
+  txt('coolVolt', cool.vNtc.toFixed(3));
+
+  // ----- Tab 6: MHEV & DCT -----
+  txt('valMhevSoc', Math.round(mhev.soc) + ' %');
+  txt('valMotorTq', Math.round(vNum('ctrlMotorTq')) + ' N·m');
+  txt('valMotorP', Math.round(vNum('ctrlMotorP')) + ' kW');
+  txt('valRegenEff', Math.round(vNum('ctrlRegenEff')) + ' %');
+  txt('valBrakePedal', Math.round(vNum('ctrlBrakePedal')) + ' %');
+  txt('valMhevMode', $id('mhevMode') ? $id('mhevMode').options[$id('mhevMode').selectedIndex].text : 'Automatic');
+  const mb = $id('mhevBadge');
+  if (mb) { mb.className = mhev.badgeClass; txt('mhevBadge', mhev.badge); }
+  txt('mhevTorque', mhev.motorTq.toFixed(1));
+  txt('mhevPower', (mhev.regenKw > 0 ? -mhev.regenKw : mhev.motorKw).toFixed(2));
+  txt('mhevCurrent', mhev.battA.toFixed(1));
+  txt('mhevBattP', mhev.battKw.toFixed(2));
+  txt('valGear', $id('gearSelect') ? $id('gearSelect').options[$id('gearSelect').selectedIndex].text : '5th · 0.822');
+  txt('valFinalDrive', vNum('ctrlFinalDrive').toFixed(2));
+  txt('dctRatio', mhev.gr.toFixed(3));
+  txt('dctInputRpm', String(Math.round(mhev.inputRpm)));
+  txt('dctSlip', String(Math.round(mhev.slip)));
+  txt('dctOutTorque', mhev.outTorque.toFixed(1));
+
+  // ----- Tab 7: sensors (with fault distortion on raw signal) -----
+  const fty = ecu.fty;
+  function faulty(key, good) {
+    if (ecu.fch === 'none' || ecu.fch !== key) return good;
+    if (fty === 'open') return '0.00 V';
+    if (fty === 'short') return '0.05 V';
+    return good;
+  }
+  const tps1v = 0.5 + 4.0 * inp.thr / 100;
+  const tps2v = 4.5 - 3.5 * inp.thr / 100;
+  const mapV = 0.5 + 4.0 * inp.P6 / 250;
+  txt('tps1Val', faulty('tps', tps1v.toFixed(2)));
+  txt('tps2Val', faulty('tps', tps2v.toFixed(2)));
+  txt('mapVal', faulty('map', mapV.toFixed(2)) + ' / ' + inp.P6.toFixed(1) + ' kPa');
+  txt('ectVal', faulty('ect', cool.vNtc.toFixed(3)) + ' / ' + state.ect.toFixed(1) + ' °C');
+  txt('ckpVal', (inp.rpm / 60 * 58).toFixed(1) + ' Hz');
+  txt('cmpVal', (inp.rpm / 60).toFixed(1) + ' Hz');
+
+  // ECU strategy / limitation / banner
+  const strat = $id('ecuStrategy');
+  if (strat) {
+    txt('ecuStrategy', ecu.strategy);
+    strat.className = 'pill mt-1.5 w-max ' + ecu.pill;
+  }
+  txt('torqueLimitPct', ecu.limitPct.toFixed(1));
+  const alertEl = $id('faultAlert');
+  if (alertEl) {
+    alertEl.innerHTML = ecu.alertHtml;
+    alertEl.className = 'mt-2.5 px-3.5 py-3 rounded-xl text-[12.5px] leading-relaxed ' +
+      (ecu.isLimp ? 'bg-red-50 border border-red-300 text-red-800' :
+       ecu.limitPct > 0 ? 'bg-amber-50 border border-amber-300 text-amber-800' :
+       'bg-emerald-50 border border-emerald-200 text-emerald-800');
+  }
+  txt('ecuTqReq', ecu.tDriver.toFixed(1));
+  txt('ecuTqAllow', ecu.tAllowed.toFixed(1));
+  txt('ecuThrTarget', ecu.thrTarget.toFixed(1));
+  txt('ecuBoostTarget', ecu.boostTarget.toFixed(1));
+  txt('valFaultSev', vNum('faultSeverity') + ' %');
+
+  // ----- Tab 8: oscilloscope bar -----
+  const sch = $id('scopeChannel') ? $id('scopeChannel').value : 'CKP';
+  txt('scopeBarLeft', sch + ' — generated waveform');
+  let right = '';
+  if (sch === 'CKP') right = (inp.rpm / 60 * 58).toFixed(1) + ' Hz';
+  else if (sch === 'CMP') right = (inp.rpm / 60).toFixed(1) + ' Hz';
+  else if (sch === 'TPS1') right = tps1v.toFixed(2) + ' V';
+  else if (sch === 'TPS2') right = tps2v.toFixed(2) + ' V';
+  else if (sch === 'MAP') right = mapV.toFixed(2) + ' V';
+  else if (sch === 'ECT') right = cool.vNtc.toFixed(3) + ' V';
+  else if (sch === 'RAIL') right = (0.5 + 4.0 * fuel.rail / 350).toFixed(2) + ' V';
+  else right = fuel.pwMs.toFixed(2) + ' ms';
+  txt('scopeBarRight', right);
+}
+
+/* ---------- Master compute orchestration ---------- */
+let frameCount = 0;
+function compute(dt) {
+  const inp = readInputs();
+  const ecu = computeECU(inp);
+  const fuel = computeFuel(inp, ecu);
+  const brakeTorque = ecu.tAllowed;
+  const omega = 2 * Math.PI * inp.rpm / 60;
+  state.out.brakeTorque = brakeTorque;
+  state.out.brakeKw = (brakeTorque * omega) / 1000;
+  const cool = coolingStep(inp, fuel, dt || 1 / 60);
+  // Battery SOC integration
+  if (Math.abs(state.lastBattKw) > 0.05) {
+    state.soc = clamp(state.soc - state.lastBattKw * 0.004, 10, 95);
+    const socEl = $id('ctrlMhevSoc');
+    if (socEl) socEl.value = String(Math.round(state.soc));
+  }
+  const mhev = computeMhevDct(inp, ecu);
+  state.lastBattKw = mhev.battKw;
+
+  updateDOM(inp, ecu, fuel, cool, mhev);
+
+  frameCount++;
+  if (typeof updateCharts === 'function' && frameCount % 3 === 0) updateCharts(inp, fuel, ecu);
+  return { inp, ecu, fuel, cool, mhev };
+}
+</script>
+<!-- ═══════════════════ JAVASCRIPT — PART C: CHARTS, CANVAS & CONTROL LOOP ═══════════════════ -->
+<script>
+'use strict';
+let chartPV = null, chartCylPress = null, chartValves = null, chartWiebe = null, chartCool = null;
+
+function baseOpts(yTitle) {
+  return {
+    responsive: true, maintainAspectRatio: false, animation: false,
+    interaction: { intersect: false, mode: 'index' },
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { grid: { color: '#f1f5f9' }, ticks: { color: '#64748b', font: { size: 9 }, maxTicksLimit: 10 }, title: { display: false } },
+      y: { grid: { color: '#f1f5f9' }, ticks: { color: '#64748b', font: { size: 9 } }, title: { display: true, text: yTitle, color: '#475569', font: { size: 10, weight: 'bold' } } }
+    }
+  };
+}
+function mkLine(ctx, dsArray, yTitle) {
+  return new Chart(ctx, {
+    type: 'line',
+    data: { labels: [], datasets: dsArray },
+    options: baseOpts(yTitle)
+  });
+}
+
+/* ---------- Chart singleton factory ---------- */
+function chartFactory(id, ds, yTitle) {
+  const el = $id(id);
+  if (!el || !window.Chart) return null;
+  return mkLine(el.getContext('2d'), ds, yTitle);
+}
+
+function initCharts() {
+  chartPV = chartFactory('chartPV', [
+    { data: [], borderColor: '#0284c7', backgroundColor: 'rgba(2,132,199,0.08)', borderWidth: 2, pointRadius: 0, fill: true, tension: 0.25 },
+    { data: [], borderColor: '#dc2626', backgroundColor: '#dc2626', pointRadius: 5, pointHoverRadius: 6, showLine: false }
+  ], 'Pressure (bar)');
+  chartCylPress = chartFactory('chartCylPress', [
+    { data: [], borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.08)', borderWidth: 2, pointRadius: 0, fill: true, tension: 0.25 },
+    { data: [], borderColor: '#0284c7', backgroundColor: '#0284c7', pointRadius: 6, pointHoverRadius: 7, showLine: false }
+  ], 'Pressure (bar)');
+  chartValves = chartFactory('chartValveLift', [
+    { data: [], borderColor: '#16a34a', backgroundColor: 'rgba(22,163,74,0.10)', borderWidth: 2, pointRadius: 0, fill: true, tension: 0.3 },
+    { data: [], borderColor: '#d97736', backgroundColor: 'rgba(217,119,54,0.10)', borderWidth: 2, pointRadius: 0, fill: true, tension: 0.3 }
+  ], 'Valve lift (mm)');
+  chartWiebe = chartFactory('chartWiebe', [
+    { data: [], borderColor: '#b45309', backgroundColor: 'rgba(180,83,9,0.08)', borderWidth: 2.5, pointRadius: 0, fill: true, tension: 0.25 }
+  ], 'x_b — mass fraction burned');
+  chartCool = chartFactory('chartCoolTrend', [
+    { data: [], borderColor: '#d97736', backgroundColor: 'rgba(217,119,54,0.08)', borderWidth: 2, pointRadius: 0, fill: true, tension: 0.3 }
+  ], 'ECT (°C)');
+}
+
+/* ---------- Throttled chart updater ---------- */
+function updateCharts(inp, fuel, ecu) {
+  const rod = inp.rod, cr = inp.cr;
+  // PV indicator (Tab 1)
+  if (chartPV) {
+    const pvLabels = [], pvData = [];
+    for (let phi = 0; phi <= 720; phi += 6) {
+      const cs = cylStateAt(phi, inp, fuel, ecu);
+      pvLabels.push(cs.vol.toFixed(0));
+      pvData.push(+(cs.P / 100).toFixed(2));
+    }
+    const cur = cylStateAt(((state.crank % 720) + 720) % 720, inp, fuel, ecu);
+    chartPV.data.labels = pvLabels;
+    chartPV.data.datasets[0].data = pvData;
+    chartPV.data.datasets[1].data = pvData.map(function (x, i) {
+      return Math.abs(pvLabels[i] - cur.vol.toFixed(0)) < 0.01 ? (cur.P / 100) : null;
+    });
+    chartPV.options.scales.x.title = { display: true, text: 'Volume (cm³) →', color: '#475569', font: { size: 10, weight: 'bold' } };
+    chartPV.update('none');
+  }
+  // Cylinder pressure vs cycle angle (Tab 3)
+  if (chartCylPress) {
+    const offs = { 1: 0, 3: 180, 4: 360, 2: 540 };
+    const base = (360 + offs[state.selectedCyl]) % 720;                 // local intake-TDC offset
+    const cpLabels = [], cpData = [];
+    for (let a = 0; a <= 720; a += 10) {
+      const cs = cylStateAt((a + base) % 720, inp, fuel, ecu);
+      cpLabels.push(a + '°');
+      cpData.push(+(cs.P / 100).toFixed(2));
+    }
+    const localPhi = ((state.crank % 720) + 720) % 720;
+    const curCs = cylStateAt(localPhi, inp, fuel, ecu);
+    const bucket = Math.round(localPhi / 10) * 10 % 720;
+    chartCylPress.data.labels = cpLabels;
+    chartCylPress.data.datasets[0].data = cpData;
+    chartCylPress.data.datasets[1].data = cpData.map(function (x, i) {
+      return parseInt(cpLabels[i]) === bucket ? +(curCs.P / 100).toFixed(2) : null;
+    });
+    chartCylPress.update('none');
+  }
+  // Valve lift (Tab 3)
+  if (chartValves) {
+    const ivo = vNum('ctrlIvo'), ivc = vNum('ctrlIvc'), evo = vNum('ctrlEvo'), evc = vNum('ctrlEvc'), lift = vNum('ctrlMaxLift');
+    const inOpen = ((720 - ivo) % 720 + 720) % 720, inClose = ((ivc % 720) + 720) % 720;
+    const exOpen = ((540 - evo) % 720 + 720) % 720, exClose = ((evc % 720) + 720) % 720;
+    function bell(a, open, close, mx) {
+      const span = ((close - open) % 720 + 720) % 720;
+      const d = ((a - open) % 720 + 720) % 720;
+      return d <= span ? mx * Math.sin(Math.PI * d / span) : 0;
+    }
+    const vlLabels = [], inD = [], exD = [];
+    for (let a = 0; a <= 720; a += 5) {
+      vlLabels.push(a + '°'); inD.push(+bell(a, inOpen, inClose, lift).toFixed(2)); exD.push(+bell(a, exOpen, exClose, lift).toFixed(2));
+    }
+    chartValves.data.labels = vlLabels;
+    chartValves.data.datasets[0].data = inD;
+    chartValves.data.datasets[1].data = exD;
+    chartValves.update('none');
+  }
+  // Wiebe (Tab 4)
+  if (chartWiebe) {
+    const spark = fuel.spark, dur = fuel.dur;
+    const ignStart = -spark;
+    const wLabels = [], wData = [];
+    for (let a = -20; a <= 70; a += 2) {
+      wLabels.push(a + '°');
+      const frac = a >= ignStart ? Math.min(1, (a - ignStart) / dur) : 0;
+      wData.push(+(100 * (1 - Math.exp(-5.0 * Math.pow(Math.max(0, frac), 3)))).toFixed(1));
+    }
+    chartWiebe.data.labels = wLabels;
+    chartWiebe.data.datasets[0].data = wData;
+    chartWiebe.update('none');
+  }
+  // Cooling trend (Tab 5)
+  if (chartCool) {
+    chartCool.data.labels = state.coolTime.map(function (t) { return t + 's'; });
+    chartCool.data.datasets[0].data = state.coolHistory.map(function (t) { return +t.toFixed(2); });
+    chartCool.options.scales.y.min = Math.max(0, Math.min.apply(null, state.coolHistory.concat([state.ect])) - 6);
+    chartCool.options.scales.y.max = Math.min(140, Math.max.apply(null, state.coolHistory.concat([state.ect])) + 6);
+    chartCool.update('none');
+  }
+}
+
+/* ---------- 4-piston canvas visualizer ---------- */
+function drawPistons() {
+  const c = $id('canvasPistons'); if (!c) return;
+  const dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth || 800, h = c.clientHeight || 260;
+  if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+  const ctx = c.getContext('2d');
+  ctx.save(); ctx.scale(dpr, dpr); ctx.clearRect(0, 0, w, h);
+
+  const rod = vNum('ctrlRod');
+  const offs = { 1: 0, 3: 180, 4: 360, 2: 540 };
+  const compFrac = pistonDispMm(180, rod) / STROKE; // ≈ 1
+  const colW = w / 4, crankY = h - 42, strokeH = Math.min(52, h * 0.24);
+  const boreW = clamp(colW * 0.72, 34, 70), halfBore = boreW / 2;
+  for (let i = 0; i < 4; i++) {
+    const cylNum = [1, 2, 3, 4][i];
+    // firing-TDC offsets: phase of cyl k lags by offs
+    const localPhi = (((state.crank - offs[cylNum]) % 720) + 720) % 720;
+    const dispFrac = pistonDispMm(localPhi, rod) / (STROKE * compFrac);
+    const pistonY = 44 + dispFrac * strokeH;
+    const cx = colW * i + colW / 2;
+
+    let phase = 'INTAKE', col = '#0284c7', bg = '#e0f2fe';
+    if (localPhi >= 180 && localPhi < 360) { phase = 'COMPRESSION'; col = '#b45309'; bg = '#fef3c7'; }
+    else if (localPhi >= 360 && localPhi < 540) { phase = 'POWER'; col = '#dc2626'; bg = '#fee2e2'; }
+    else if (localPhi >= 540) { phase = 'EXHAUST'; col = '#475569'; bg = '#f1f5f9'; }
+
+    // Bore + chamber
+    ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 2;
+    ctx.strokeRect(cx - halfBore, 30, boreW, 150);
+    ctx.fillStyle = '#f1f5f9'; ctx.fillRect(cx - halfBore + 1, 31, boreW - 2, 12);
+
+    // Rod + crank
+    const th = localPhi * Math.PI / 180;
+    const pinX = cx + Math.sin(th) * 18, pinY = crankY - Math.cos(th) * 18;
+    ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.moveTo(cx, pistonY + 22); ctx.lineTo(pinX, pinY); ctx.stroke();
+    ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx, crankY, 20, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = '#0284c7'; ctx.beginPath(); ctx.arc(pinX, pinY, 5, 0, Math.PI * 2); ctx.fill();
+
+    // Piston
+    ctx.fillStyle = '#ffffff'; ctx.strokeStyle = col; ctx.lineWidth = 2;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(cx - halfBore + 3, pistonY, boreW - 6, 40, 5); else ctx.rect(cx - halfBore + 3, pistonY, boreW - 6, 40);
+    ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(cx - halfBore + 5, pistonY + 8); ctx.lineTo(cx + halfBore - 5, pistonY + 8);
+    ctx.moveTo(cx - halfBore + 5, pistonY + 14); ctx.lineTo(cx + halfBore - 5, pistonY + 14); ctx.stroke();
+    ctx.fillStyle = '#64748b'; ctx.beginPath(); ctx.arc(cx, pistonY + 22, 3.5, 0, Math.PI * 2); ctx.fill();
+
+    // Labels + live displacement + stroke badge
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#0f172a'; ctx.font = 'bold 11px sans-serif';
+    ctx.fillText('Cyl ' + cylNum + ' — ' + Math.round(pistonDispMm(localPhi, rod) * 10) / 10 + ' mm', cx, 20);
+    const bw = clamp(colW * 0.8, 46, 78), bh = 17;
+    ctx.fillStyle = bg; ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(cx - bw / 2, h - 66, bw, bh, 8); else ctx.rect(cx - bw / 2, h - 66, bw, bh);
+    ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = col; ctx.font = 'bold 8.5px monospace';
+    ctx.fillText(phase, cx, h - 56);
+    ctx.fillStyle = '#64748b'; ctx.font = '9px monospace';
+    ctx.fillText(Math.round(localPhi) + '°', cx, h - 36);
+  }
+  ctx.restore();
+}
+
+/* ---------- Oscilloscope ---------- */
+function scopeSignal(ch, tAbs, sim) {
+  if (!sim) return 0;
+  const inp = sim.inp, fuel = sim.fuel, cool = sim.cool, ecu = sim.ecu;
+  const rpm = inp.rpm, revs = tAbs * rpm / 60;
+  const fch = ecu.fch, fty = ecu.fty, sev = ecu.sev;
+  const MAP_BTWN = { map: 'MAP', tps: 'TPS1', ect: 'ECT', ckp: 'CKP', cmp: 'CMP', rail: 'RAIL', knock: 'INJ', misfire: 'INJ' };
+  const y = (function () {
+    switch (ch) {
+      case 'CKP': {
+        const tooth = revs * 58;
+        if ((tooth % 60) > 58) return 0;                              // 2-tooth gap each rev
+        return 2.1 * Math.sin(tooth * 2 * Math.PI);
+      }
+      case 'CMP': return (((revs / 2) % 1) < 0.5) ? 4.8 : 0;          // toggles at N/120 Hz
+      case 'TPS1': return 0.5 + 4.0 * inp.thr / 100;
+      case 'TPS2': return 4.5 - 3.5 * inp.thr / 100;
+      case 'MAP': return 0.5 + 4.0 * inp.P6 / 250;
+      case 'ECT': return cool.vNtc;
+      case 'RAIL': return 0.5 + 4.0 * fuel.rail / 350;
+      case 'INJ': {                                                   // low-side pulses each 2-rev quarter
+        const period = 30 / rpm;                                      // s between fires
+        const on = (tAbs % period) < fuel.pwMs / 1000;
+        return on ? 0.2 : 4.8;
+      }
+      default: return 0;
+    }
+  })();
+  const affected = fch !== 'none' && (MAP_BTWN[fch] === ch ||
+    (fch === 'tps' && (ch === 'TPS1' || ch === 'TPS2')) ||
+    (fch === 'misfire' && ch === 'INJ' && true) ||
+    (fch === 'knock' && ch === 'INJ' && true));
+  if (!affected) return y;
+  if (fty === 'open') return (ch === 'INJ') ? 4.8 : 0;
+  if (fty === 'short') return 0.05;
+  return y + sev * 1.5 * (0.5 + 0.5 * Math.sin(2 * Math.PI * tAbs * 0.8));
+}
+
+function drawScope() {
+  const c = $id('scopeCanvas'); if (!c) return;
+  const dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth || 800, h = c.clientHeight || 260;
+  if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+  const ctx = c.getContext('2d');
+  ctx.save(); ctx.scale(dpr, dpr);
+
+  // Screen + grid (#101a22 bg, #1e2d3b grid)
+  ctx.fillStyle = '#101a22'; ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = '#1e2d3b'; ctx.lineWidth = 1;
+  const nDivX = 10, nDivY = 8, padL = 34, padR = 12, padT = 12, padB = 14;
+  const gridW = w - padL - padR, gridH = h - padT - padB;
+  for (let i = 0; i <= nDivX; i++) { const x = padL + i * gridW / nDivX; ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT + gridH); ctx.stroke(); }
+  for (let j = 0; j <= nDivY; j++) { const y = padT + j * gridH / nDivY; ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + gridW, y); ctx.stroke(); }
+
+  const ch = $id('scopeChannel') ? $id('scopeChannel').value : 'CKP';
+  const timebase = +($id('scopeTimebase') ? $id('scopeTimebase').value : 100);
+  const sigType = $id('scopeSigType') ? $id('scopeSigType').value : 'native';
+  const vs = +($id('scopeVScale') ? $id('scopeVScale').value : 2);
+  const scopeWin = timebase * 10 / 1000;                                // s
+  const mid = padT + gridH / 2;
+  const pxPerV = gridH / (8 * vs);
+  const isDigital = sigType === 'digital' || (sigType === 'native' && ch === 'CMP');
+
+  // Envelope trace (red #ef4444): subsample per column to suppress aliasing
+  const yHi = [], yLo = [], step = 2;
+  for (let px = 0; px <= gridW; px += step) {
+    const t0 = state.scopeTime + (px / gridW) * scopeWin;
+    let lo = Infinity, hi = -Infinity;
+    for (let k = 0; k < 14; k++) {
+      let y = scopeSignal(ch, t0 + (k / 14) * (scopeWin * step / Math.max(1, gridW)), state.lastSim);
+      if (isDigital) y = y > 2.5 ? 4.8 : 0;
+      if (y < lo) lo = y; if (y > hi) hi = y;
+    }
+    const bipolar = (ch === 'CKP' && !isDigital);
+    const py = function (yv) {
+      if (bipolar) return mid - yv * pxPerV * 1.9;
+      return mid + (2.4 - yv) * pxPerV;
+    };
+    yHi.push([padL + px, Math.max(padT + 1, py(hi))]);
+    yLo.push([padL + px, Math.min(padT + gridH - 1, py(lo))]);
+  }
+  ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 1.6; ctx.lineJoin = 'round';
+  [yHi, yLo].forEach(function (path) {
+    ctx.beginPath();
+    path.forEach(function (p, i) { i === 0 ? ctx.moveTo(p[0], p[1]) : ctx.lineTo(p[0], p[1]); });
+    ctx.stroke();
+  });
+
+  // Overlays
+  ctx.fillStyle = '#7dd3fc'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'left';
+  ctx.fillText(ch + ' signal', padL + 6, padT + 14);
+  ctx.fillStyle = '#64748b'; ctx.font = '9.5px monospace';
+  ctx.fillText(timebase + ' ms/div · ' + vs + ' V/div · ' + (isDigital ? 'DIGITAL' : 'ANALOG'), padL + 6, h - 5);
+  const sim = state.lastSim;
+  if (sim && sim.ecu.fch !== 'none') {
+    ctx.fillStyle = '#fda4af';
+    ctx.fillText('FAULT: ' + sim.ecu.fch.toUpperCase() + ' / ' + sim.ecu.fty.toUpperCase(), padL + 120, padT + 14);
+  }
+  ctx.restore();
+}
+</script>
+<!-- ═══════════════════ JAVASCRIPT — PART D: CONTROLS & MAIN LOOP ═══════════════════ -->
+<script>
+'use strict';
+
+/* ---------- Tab navigation ---------- */
+document.querySelectorAll('.tab-btn').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    document.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.remove('active'); });
+    document.querySelectorAll('.tab-content').forEach(function (c) { c.classList.add('hidden'); });
+    btn.classList.add('active');
+    const t = btn.getAttribute('data-tab');
+    const sec = $id(t);
+    if (sec) { sec.classList.remove('hidden'); sec.classList.add('flex'); }
+    if (chartPV) chartPV.resize(); if (chartCylPress) chartCylPress.resize();
+    if (chartValves) chartValves.resize(); if (chartWiebe) chartWiebe.resize();
+    if (chartCool) chartCool.resize();
+    if (t === 'tab3') drawPistons();
+    if (t === 'tab8') drawScope();
+  });
+});
+// Ensure active tab content uses flex layout (Tailwind hidden/flex interplay)
+document.querySelectorAll('.tab-content').forEach(function (c) {
+  if (!c.classList.contains('hidden')) c.classList.add('flex');
+});
+
+/* ---------- Control propagation (every input recalculates downstream models) ---------- */
+const CONTROL_IDS = [
+  'ctrlRpm', 'ctrlAps', 'ctrlThrottle', 'ctrlSpeed', 'ctrlPamb', 'ctrlTamb',
+  'ctrlPr', 'ctrlEtaC', 'ctrlEtaIc', 'ctrlDropIc', 'ctrlFilterLoss', 'ctrlDuctLoss',
+  'ctrlEtaV', 'ctrlCr', 'ctrlRod', 'ctrlCrank',
+  'ctrlIvo', 'ctrlIvc', 'ctrlEvo', 'ctrlEvc', 'ctrlMaxLift',
+  'gdiLambda', 'gdiLhv', 'gdiRail', 'gdiFlow', 'gdiSoi', 'gdiDead', 'gdiSpark', 'gdiDur', 'gdiEff',
+  'ctrlCoolInit', 'ctrlCoolCap', 'ctrlRadUa', 'fanMode',
+  'ctrlMhevSoc', 'ctrlMotorTq', 'ctrlMotorP', 'ctrlRegenEff', 'ctrlBrakePedal', 'mhevMode',
+  'gearSelect', 'ctrlFinalDrive', 'selectCylinder',
+  'faultChannel', 'faultTypeSel', 'faultSeverity',
+  'scopeChannel', 'scopeTimebase', 'scopeSigType', 'scopeVScale'
+];
+CONTROL_IDS.forEach(function (id) {
+  const el = $id(id);
+  if (!el) return;
+  el.addEventListener('input', function () {
+    if (id === 'ctrlCrank') state.crank = +el.value;
+    if (id === 'ctrlCoolInit') state.ect = +el.value;                   // initial-condition slider drives current state
+    if (id === 'ctrlMhevSoc') state.soc = +el.value;
+    const sim = compute(1 / 60);
+    state.lastSim = sim;
+    if ($id('tab3') && !$id('tab3').classList.contains('hidden')) drawPistons();
+    if ($id('tab8') && !$id('tab8').classList.contains('hidden') && !state.scopeFrozen) drawScope();
+    if (id === 'fanMode') drawCoolChart();
+  });
+});
+// Select elements fire 'change' as well — covered by 'input' in modern browsers; keep explicit for safety:
+['faultChannel', 'faultTypeSel', 'fanMode', 'mhevMode', 'gearSelect', 'selectCylinder', 'scopeChannel', 'scopeTimebase', 'scopeSigType', 'scopeVScale'].forEach(function (id) {
+  const el = $id(id);
+  if (el) {
+    el.addEventListener('change', function () {
+      if (id === 'scopeChannel') txt('scopeBarLeft', el.value + ' — generated waveform');
+      compute(1 / 60);
+      if ($id('tab8') && !$id('tab8').classList.contains('hidden')) drawScope();
+    });
+  }
+});
+
+/* ---------- Master playback toolbar (5 buttons only) ---------- */
+function setHeaderState() {
+  const pill = $id('statePill');
+  if (!pill) return;
+  if (!state.running) { pill.className = 'pill pill-amber'; txt('statePill', 'PAUSED'); return; }
+  pill.className = 'pill pill-green';
+  txt('statePill', 'SIMULATING');
+  if (state.lastSim && state.lastSim.ecu && state.lastSim.ecu.limitPct > 0) {
+    pill.className = state.lastSim.ecu.isLimp ? 'pill pill-red' : 'pill pill-amber';
+    txt('statePill', 'TORQUE LIMITED');
+  }
+}
+/* Toolbar visual state (which playback mode is engaged) */
+function markToolbarState() {
+  const bRun = $id('btnRun'), bPause = $id('btnPause'), bAng = $id('btnAutoAngle');
+  if (bRun) bRun.classList.toggle('is-on', state.running);
+  if (bPause) bPause.classList.toggle('is-on', !state.running);
+  if (bAng) {
+    bAng.classList.toggle('is-on', state.autoAngle);
+    bAng.classList.toggle('is-off', !state.autoAngle);
+  }
+}
+$id('btnRun').addEventListener('click', function () {
+  state.running = true; state.autoAngle = true;
+  const a = $id('autoAngleState'); txt('autoAngleState', 'ON');
+  compute(1 / 60); setHeaderState(); markToolbarState();
+});
+$id('btnPause').addEventListener('click', function () {
+  state.running = false; setHeaderState(); markToolbarState();
+});
+$id('btnStep10').addEventListener('click', function () {
+  state.crank = (state.crank + 10) % 720;
+  $id('ctrlCrank').value = String(Math.round(state.crank));
+  compute(1 / 60); drawPistons(); updateCharts(state.lastSim ? state.lastSim.inp : null, state.lastSim ? state.lastSim.fuel : null, state.lastSim ? state.lastSim.ecu : null);
+});
+$id('btnResetModel').addEventListener('click', function () {
+  Object.keys(DEF).forEach(function (k) {
+    const el = $id(k);
+    if (el) el.value = String(DEF[k]);
+  });
+  state.running = true; state.autoAngle = true; state.crank = 0;
+  state.ect = 98.4; state.fanLow = false; state.fanHigh = false;
+  state.soc = 65; state.simTime = 0; state.scopeTime = 0; state.scopeFrozen = false; state.scopePaused = false;
+  setBtnState('scopeBtnPause', false); setBtnState('scopeBtnFreeze', false);
+  state.coolHistory = []; state.coolTime = [];
+  txt('autoAngleState', 'ON'); txt('scopeBarLeft', 'CKP — generated waveform');
+  compute(1 / 60); setHeaderState(); markToolbarState(); drawPistons(); drawCoolChart(); drawScope();
+});
+$id('btnAutoAngle').addEventListener('click', function () {
+  state.autoAngle = !state.autoAngle;
+  txt('autoAngleState', state.autoAngle ? 'ON' : 'OFF');
+  markToolbarState();
+});
+function drawCoolChart() { if (chartCool) updateChartsCool(); }
+function updateChartsCool() {
+  if (!$id('chartCoolTrend')) return;
+  if (chartCool) {
+    chartCool.data.labels = state.coolTime.map(function (t) { return t + 's'; });
+    chartCool.data.datasets[0].data = state.coolHistory.map(function (t) { return +t.toFixed(2); });
+    const all = state.coolHistory.concat([state.ect]);
+    chartCool.options.scales.y.min = Math.max(0, Math.min.apply(null, all) - 6);
+    chartCool.options.scales.y.max = Math.min(140, Math.max.apply(null, all) + 6);
+    chartCool.update('none');
+  }
+}
+
+/* ---------- Tab 5 dedicated actions ---------- */
+$id('btnCoolStep').addEventListener('click', function () {
+  const inp = state.lastSim ? state.lastSim.inp : readInputs();
+  const fuel = state.lastSim ? state.lastSim.fuel : computeFuel(inp, computeECU(inp));
+  coolingStep(inp, fuel, 10);                                          // integrate 10 s forward
+  state.lastSim = compute(1 / 60);
+  logCooling(); updateChartsCool();
+});
+$id('btnCoolReset').addEventListener('click', function () {
+  state.ect = +vNum('ctrlCoolInit');                                    // back to configured initial state
+  state.fanLow = false; state.fanHigh = false;
+  state.coolHistory = []; state.coolTime = [];
+  state.lastSim = compute(1 / 60);
+  updateChartsCool();
+});
+function logCooling() {
+  const t = Math.round(state.simTime);
+  if (state.coolTime.length === 0 || t > state.coolTime[state.coolTime.length - 1]) {
+    state.coolTime.push(t); state.coolHistory.push(state.ect);
+    if (state.coolHistory.length > 90) { state.coolHistory.shift(); state.coolTime.shift(); }
+  }
+}
+
+/* ---------- Tab 8 dedicated actions ---------- */
+function setBtnState(id, on) {
+  const b = $id(id);
+  if (b) b.classList.toggle('is-on', on);
+}
+$id('scopeBtnPause').addEventListener('click', function () {
+  state.scopePaused = !state.scopePaused;
+  setBtnState('scopeBtnPause', state.scopePaused);
+});
+$id('scopeBtnFreeze').addEventListener('click', function () {
+  state.scopeFrozen = !state.scopeFrozen;
+  setBtnState('scopeBtnFreeze', state.scopeFrozen);
+});
+$id('scopeBtnClear').addEventListener('click', function () {
+  state.scopeTime = 0; state.scopeFrozen = false;
+  setBtnState('scopeBtnFreeze', false);
+  drawScope();
+});
+$id('scopeBtnReset').addEventListener('click', function () {
+  $id('faultChannel').value = 'none';
+  $id('faultTypeSel').value = 'open';
+  $id('faultSeverity').value = String(DEF.faultSeverity);
+  state.lastSim = compute(1 / 60); drawScope();
+});
+
+/* ---------- Resize handling ---------- */
+let resizeTimer = null;
+window.addEventListener('resize', function () {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(function () {
+    if (chartPV) chartPV.resize(); if (chartCylPress) chartCylPress.resize();
+    if (chartValves) chartValves.resize(); if (chartWiebe) chartWiebe.resize();
+    if (chartCool) chartCool.resize();
+    drawPistons(); drawScope();
+  }, 120);
+});
+
+/* ---------- Main animation loop (requestAnimationFrame, 60 FPS) ---------- */
+let lastTs = performance.now(), lastLoggedSec = -1;
+function loop(ts) {
+  const dt = clamp((ts - lastTs) / 1000, 0, 0.1);
+  lastTs = ts;
+  if (state.running) {
+    state.simTime += dt;
+    if (state.autoAngle) {
+      const rpm = vNum('ctrlRpm');
+      state.crank = (state.crank + rpm * 6 * dt * 0.25) % 720;         // slowed 4× for inspection
+      const cc = $id('ctrlCrank');
+      if (cc && document.activeElement !== cc) cc.value = String(Math.round(state.crank));
+    }
+    if (!state.scopePaused && !state.scopeFrozen) state.scopeTime += dt;
+    state.lastSim = compute(dt);
+    setHeaderState();
+    if (Math.floor(state.simTime) > lastLoggedSec) { lastLoggedSec = Math.floor(state.simTime); logCooling(); updateChartsCool(); }
+    if (!$id('tab3').classList.contains('hidden')) drawPistons();
+    if (!$id('tab8').classList.contains('hidden') && !state.scopeFrozen) drawScope();
+  }
+  requestAnimationFrame(loop);
+}
+
+/* =====================================================================
+   EXECUTIVE CUSTOM DROPDOWN ENGINE (Replaces native OS popup menus)
+   ===================================================================== */
+function initCustomSelects() {
+  document.querySelectorAll('select').forEach(function (sel) {
+    if (sel.dataset.customized === 'true') return;
+    sel.dataset.customized = 'true';
+
+    // Wrap select in container
+    const wrap = document.createElement('div');
+    wrap.className = 'c-select-wrap' + (sel.classList.contains('!w-auto') ? ' !w-auto min-w-[130px]' : '');
+    sel.parentNode.insertBefore(wrap, sel);
+    wrap.appendChild(sel);
+
+    // Visually hide native select while keeping it 100% functional in DOM
+    sel.classList.add('c-native-select');
+
+    // Create custom button trigger
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'c-select-btn';
+    btn.setAttribute('aria-haspopup', 'listbox');
+    btn.setAttribute('aria-expanded', 'false');
+
+    const spanText = document.createElement('span');
+    spanText.className = 'truncate';
+    spanText.textContent = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : '';
+
+    const arrowSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    arrowSvg.setAttribute('viewBox', '0 0 20 20');
+    arrowSvg.setAttribute('fill', 'none');
+    arrowSvg.setAttribute('class', 'c-select-arrow');
+    arrowSvg.innerHTML = '<path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M6 8l4 4 4-4"/>';
+
+    btn.appendChild(spanText);
+    btn.appendChild(arrowSvg);
+    wrap.appendChild(btn);
+
+    // Create floating popover menu
+    const menu = document.createElement('div');
+    menu.className = 'c-select-menu';
+    menu.setAttribute('role', 'listbox');
+
+    function rebuildMenu() {
+      menu.innerHTML = '';
+      Array.from(sel.options).forEach(function (opt) {
+        const item = document.createElement('div');
+        item.className = 'c-select-opt' + (opt.selected ? ' is-selected' : '');
+        item.setAttribute('role', 'option');
+        item.setAttribute('aria-selected', opt.selected ? 'true' : 'false');
+        item.dataset.value = opt.value;
+
+        const labelSpan = document.createElement('span');
+        labelSpan.className = 'truncate';
+        labelSpan.textContent = opt.text;
+
+        const checkSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        checkSvg.setAttribute('viewBox', '0 0 20 20');
+        checkSvg.setAttribute('fill', 'none');
+        checkSvg.setAttribute('class', 'c-check-icon');
+        checkSvg.innerHTML = '<path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 10l4 4 8-8"/>';
+
+        item.appendChild(labelSpan);
+        item.appendChild(checkSvg);
+
+        item.addEventListener('click', function (e) {
+          e.stopPropagation();
+          sel.value = opt.value;
+          syncFromNative();
+          closeMenu();
+          sel.dispatchEvent(new Event('input', { bubbles: true }));
+          sel.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+
+        menu.appendChild(item);
+      });
+    }
+
+    rebuildMenu();
+    wrap.appendChild(menu);
+
+    function syncFromNative() {
+      const selectedOpt = sel.options[sel.selectedIndex];
+      if (selectedOpt) {
+        spanText.textContent = selectedOpt.text;
+      }
+      menu.querySelectorAll('.c-select-opt').forEach(function (item) {
+        const isMatch = item.dataset.value === String(sel.value);
+        item.classList.toggle('is-selected', isMatch);
+        item.setAttribute('aria-selected', isMatch ? 'true' : 'false');
+      });
+    }
+
+    sel._syncCustomSelect = syncFromNative;
+
+    // Reactive property interception: sync whenever .value is assigned
+    try {
+      const proto = HTMLSelectElement.prototype;
+      const nativeDesc = Object.getOwnPropertyDescriptor(proto, 'value');
+      if (nativeDesc) {
+        Object.defineProperty(sel, 'value', {
+          get: function () { return nativeDesc.get.call(this); },
+          set: function (v) {
+            nativeDesc.set.call(this, v);
+            syncFromNative();
+          },
+          configurable: true
+        });
+      }
+    } catch (e) {}
+
+    function openMenu() {
+      // Close other open menus
+      document.querySelectorAll('.c-select-menu.is-open').forEach(function (m) {
+        if (m !== menu) {
+          m.classList.remove('is-open');
+          if (m.parentElement) {
+            m.parentElement.classList.remove('is-active-wrap');
+            const b = m.parentElement.querySelector('.c-select-btn');
+            if (b) { b.classList.remove('is-open'); b.setAttribute('aria-expanded', 'false'); }
+          }
+        }
+      });
+
+      // Smart flip: if near bottom of viewport, open upwards
+      const rect = btn.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      if (spaceBelow < 230 && rect.top > 230) {
+        menu.style.top = 'auto';
+        menu.style.bottom = 'calc(100% + 4px)';
+      } else {
+        menu.style.top = 'calc(100% + 4px)';
+        menu.style.bottom = 'auto';
+      }
+
+      wrap.classList.add('is-active-wrap');
+      menu.classList.add('is-open');
+      btn.classList.add('is-open');
+      btn.setAttribute('aria-expanded', 'true');
+    }
+
+    function closeMenu() {
+      menu.classList.remove('is-open');
+      wrap.classList.remove('is-active-wrap');
+      btn.classList.remove('is-open');
+      btn.setAttribute('aria-expanded', 'false');
+    }
+
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (menu.classList.contains('is-open')) closeMenu();
+      else openMenu();
+    });
+
+    btn.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        openMenu();
+      } else if (e.key === 'Escape') {
+        closeMenu();
+      }
+    });
+  });
+
+  // Global dismiss
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('.c-select-wrap')) {
+      document.querySelectorAll('.c-select-menu.is-open').forEach(function (m) {
+        m.classList.remove('is-open');
+        if (m.parentElement) {
+          m.parentElement.classList.remove('is-active-wrap');
+          const b = m.parentElement.querySelector('.c-select-btn');
+          if (b) { b.classList.remove('is-open'); b.setAttribute('aria-expanded', 'false'); }
+        }
+      });
+    }
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.c-select-menu.is-open').forEach(function (m) {
+        m.classList.remove('is-open');
+        if (m.parentElement) {
+          m.parentElement.classList.remove('is-active-wrap');
+          const b = m.parentElement.querySelector('.c-select-btn');
+          if (b) { b.classList.remove('is-open'); b.setAttribute('aria-expanded', 'false'); }
+        }
+      });
+    }
+  });
+}
+
+/* ---------- Boot ---------- */
+window.addEventListener('DOMContentLoaded', function () {
+  // Sync DOM selections with calibrated defaults (Def objects are strings but selects need .value)
+  $id('fanMode').value = DEF.fanMode;
+  $id('mhevMode').value = DEF.mhevMode;
+  $id('gearSelect').value = String(DEF.gearSelect);
+  $id('faultChannel').value = DEF.faultChannel;
+  $id('faultTypeSel').value = DEF.faultTypeSel;
+  $id('scopeTimebase').value = DEF.scopeTimebase;
+  initCustomSelects();
+  initCharts();
+  state.lastSim = compute(1 / 60);
+  drawCoolChart();
+  drawPistons();
+  drawScope();
+  setHeaderState();
+  markToolbarState();
+  requestAnimationFrame(loop);
+});
+</script>
+</body>
+</html>
