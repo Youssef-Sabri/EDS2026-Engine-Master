@@ -1346,7 +1346,9 @@ function compute(dt) {
 
   frameCount++;
   if (typeof updateCharts === 'function' && frameCount % 3 === 0) updateCharts(inp, fuel, ecu);
-  return { inp, ecu, fuel, cool, mhev };
+  const res = { inp, ecu, fuel, cool, mhev };
+  state.lastSim = res;
+  return res;
 }
 </script>
 <!-- ═══════════════════ JAVASCRIPT — PART C: CHARTS, CANVAS & CONTROL LOOP ═══════════════════ -->
@@ -1779,7 +1781,10 @@ $id('btnPause').addEventListener('click', function () {
 $id('btnStep10').addEventListener('click', function () {
   state.crank = (state.crank + 10) % 720;
   $id('ctrlCrank').value = String(Math.round(state.crank));
-  compute(1 / 60); drawPistons(); updateCharts(state.lastSim ? state.lastSim.inp : null, state.lastSim ? state.lastSim.fuel : null, state.lastSim ? state.lastSim.ecu : null);
+  const sim = compute(1 / 60);
+  drawPistons();
+  updateCharts(sim.inp, sim.fuel, sim.ecu);
+  if ($id('tab8') && !$id('tab8').classList.contains('hidden') && !state.scopeFrozen) drawScope();
 });
 $id('btnResetModel').addEventListener('click', function () {
   Object.keys(DEF).forEach(function (k) {
