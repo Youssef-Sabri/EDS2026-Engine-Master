@@ -878,7 +878,7 @@ const state = {
   crank: 0,                       // deg, 0–720 (local cylinder frame, 0 = intake TDC of Cyl 1 reference)
   simTime: 0,                     // simulated seconds (advances when running)
   ect: 98.4, fanState: 'OFF', fanLow: false, fanHigh: false,
-  coolHistory: [], coolTime: [],
+  coolHistory: [98.4], coolTime: [0],
   soc: 65, clutchTemp: 45,
   lastDtdt: 0, lastBattKw: 0,
   scopePaused: false, scopeFrozen: false, scopeTime: 0,
@@ -1209,8 +1209,7 @@ function updateDOM(inp, ecu, fuel, cool, mhev) {
   const offs = { 1: 0, 3: 180, 4: 360, 2: 540 };
   const cyl = +($id('selectCylinder') ? $id('selectCylinder').value : 1);
   state.selectedCyl = cyl;
-  // crank state.crank: 0..720 measured so that Cyl-1 firing TDC = 360 (intake-TDC frame)
-  const localPhi = (state.crank - 360 - offs[cyl] + 720 * 3) % 720;    // 0 = intake TDC of selected cyl
+  const localPhi = (((state.crank - offs[cyl]) % 720) + 720) % 720;
   const cs = cylStateAt(localPhi, inp, fuel, ecu);
   txt('cPhase', cs.phase);
   txt('cAngle', localPhi.toFixed(1));
@@ -1402,9 +1401,17 @@ function initCharts() {
   ], 'ECT (°C)');
 }
 
-/* ---------- Throttled chart updater ---------- */
+/* ---------- Dynamic chart updater ---------- */
 function updateCharts(inp, fuel, ecu) {
-  const rod = inp.rod, cr = inp.cr;
+  if (!inp || !fuel || !ecu) {
+    if (state.lastSim) {
+      inp = inp || state.lastSim.inp;
+      fuel = fuel || state.lastSim.fuel;
+      ecu = ecu || state.lastSim.ecu;
+    } else {
+      return;
+    }
+  }
   // PV indicator (Tab 1)
   if (chartPV) {
     const pvLabels = [], pvData = [];
@@ -1413,11 +1420,11 @@ function updateCharts(inp, fuel, ecu) {
       pvLabels.push(cs.vol.toFixed(0));
       pvData.push(+(cs.P / 100).toFixed(2));
     }
-    const cur = cylStateAt(((state.crank % 720) + 720) % 720, inp, fuel, ecu);
+    const curIdx = Math.round((((state.crank % 720) + 720) % 720) / 6);
     chartPV.data.labels = pvLabels;
     chartPV.data.datasets[0].data = pvData;
-    chartPV.data.datasets[1].data = pvData.map(function (x, i) {
-      return Math.abs(pvLabels[i] - cur.vol.toFixed(0)) < 0.01 ? (cur.P / 100) : null;
+    chartPV.data.datasets[1].data = pvData.map(function (val, i) {
+      return i === curIdx ? val : null;
     });
     chartPV.options.scales.x.title = { display: true, text: 'Volume (cm³) →', color: '#475569', font: { size: 10, weight: 'bold' } };
     chartPV.update('none');
@@ -1425,27 +1432,26 @@ function updateCharts(inp, fuel, ecu) {
   // Cylinder pressure vs cycle angle (Tab 3)
   if (chartCylPress) {
     const offs = { 1: 0, 3: 180, 4: 360, 2: 540 };
-    const base = (360 + offs[state.selectedCyl]) % 720;                 // local intake-TDC offset
     const cpLabels = [], cpData = [];
     for (let a = 0; a <= 720; a += 10) {
-      const cs = cylStateAt((a + base) % 720, inp, fuel, ecu);
+      const cs = cylStateAt(a, inp, fuel, ecu);
       cpLabels.push(a + '°');
       cpData.push(+(cs.P / 100).toFixed(2));
     }
-    const localPhi = ((state.crank % 720) + 720) % 720;
+    const localPhi = (((state.crank - offs[state.selectedCyl]) % 720) + 720) % 720;
     const curCs = cylStateAt(localPhi, inp, fuel, ecu);
-    const bucket = Math.round(localPhi / 10) * 10 % 720;
+    const curAngleIdx = Math.min(cpData.length - 1, Math.max(0, Math.round(localPhi / 10)));
     chartCylPress.data.labels = cpLabels;
     chartCylPress.data.datasets[0].data = cpData;
-    chartCylPress.data.datasets[1].data = cpData.map(function (x, i) {
-      return parseInt(cpLabels[i]) === bucket ? +(curCs.P / 100).toFixed(2) : null;
+    chartCylPress.data.datasets[1].data = cpData.map(function (val, i) {
+      return i === curAngleIdx ? +(curCs.P / 100).toFixed(2) : null;
     });
     chartCylPress.update('none');
   }
-  // Valve lift (Tab 3)
+  // Valve lift (Tab 3: IVC is ABDC = 180 + ivc)
   if (chartValves) {
     const ivo = vNum('ctrlIvo'), ivc = vNum('ctrlIvc'), evo = vNum('ctrlEvo'), evc = vNum('ctrlEvc'), lift = vNum('ctrlMaxLift');
-    const inOpen = ((720 - ivo) % 720 + 720) % 720, inClose = ((ivc % 720) + 720) % 720;
+    const inOpen = ((720 - ivo) % 720 + 720) % 720, inClose = ((180 + ivc) % 720 + 720) % 720;
     const exOpen = ((540 - evo) % 720 + 720) % 720, exClose = ((evc % 720) + 720) % 720;
     function bell(a, open, close, mx) {
       const span = ((close - open) % 720 + 720) % 720;
@@ -1473,14 +1479,17 @@ function updateCharts(inp, fuel, ecu) {
     }
     chartWiebe.data.labels = wLabels;
     chartWiebe.data.datasets[0].data = wData;
+    chartWiebe.options.scales.y.min = 0;
+    chartWiebe.options.scales.y.max = 100;
     chartWiebe.update('none');
   }
   // Cooling trend (Tab 5)
   if (chartCool) {
     chartCool.data.labels = state.coolTime.map(function (t) { return t + 's'; });
     chartCool.data.datasets[0].data = state.coolHistory.map(function (t) { return +t.toFixed(2); });
-    chartCool.options.scales.y.min = Math.max(0, Math.min.apply(null, state.coolHistory.concat([state.ect])) - 6);
-    chartCool.options.scales.y.max = Math.min(140, Math.max.apply(null, state.coolHistory.concat([state.ect])) + 6);
+    const all = state.coolHistory.concat([state.ect]);
+    chartCool.options.scales.y.min = Math.max(0, Math.min.apply(null, all) - 6);
+    chartCool.options.scales.y.max = Math.min(140, Math.max.apply(null, all) + 6);
     chartCool.update('none');
   }
 }
@@ -1562,9 +1571,9 @@ function scopeSignal(ch, tAbs, sim) {
   const y = (function () {
     switch (ch) {
       case 'CKP': {
-        const tooth = revs * 58;
-        if ((tooth % 60) > 58) return 0;                              // 2-tooth gap each rev
-        return 2.1 * Math.sin(tooth * 2 * Math.PI);
+        const toothPos = (revs * 60) % 60;
+        if (toothPos >= 58) return 0;                              // genuine 2-tooth gap each rev
+        return 2.1 * Math.sin(toothPos * 2 * Math.PI);
       }
       case 'CMP': return (((revs / 2) % 1) < 0.5) ? 4.8 : 0;          // toggles at N/120 Hz
       case 'TPS1': return 0.5 + 4.0 * inp.thr / 100;
@@ -1634,11 +1643,19 @@ function drawScope() {
     yLo.push([padL + px, Math.min(padT + gridH - 1, py(lo))]);
   }
   ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 1.6; ctx.lineJoin = 'round';
-  [yHi, yLo].forEach(function (path) {
-    ctx.beginPath();
-    path.forEach(function (p, i) { i === 0 ? ctx.moveTo(p[0], p[1]) : ctx.lineTo(p[0], p[1]); });
-    ctx.stroke();
-  });
+  ctx.beginPath();
+  for (let i = 0; i < yHi.length; i++) {
+    const x = yHi[i][0], yTop = yHi[i][1], yBot = yLo[i][1];
+    if (i === 0) {
+      ctx.moveTo(x, (yTop + yBot) / 2);
+    } else {
+      ctx.lineTo(x, yTop);
+    }
+    if (Math.abs(yBot - yTop) > 1.5) {
+      ctx.lineTo(x, yBot);
+    }
+  }
+  ctx.stroke();
 
   // Overlays
   ctx.fillStyle = '#7dd3fc'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'left';
@@ -1661,16 +1678,24 @@ function drawScope() {
 document.querySelectorAll('.tab-btn').forEach(function (btn) {
   btn.addEventListener('click', function () {
     document.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.remove('active'); });
-    document.querySelectorAll('.tab-content').forEach(function (c) { c.classList.add('hidden'); });
+    document.querySelectorAll('.tab-content').forEach(function (c) { c.classList.add('hidden'); c.classList.remove('flex'); });
     btn.classList.add('active');
     const t = btn.getAttribute('data-tab');
     const sec = $id(t);
     if (sec) { sec.classList.remove('hidden'); sec.classList.add('flex'); }
-    if (chartPV) chartPV.resize(); if (chartCylPress) chartCylPress.resize();
-    if (chartValves) chartValves.resize(); if (chartWiebe) chartWiebe.resize();
-    if (chartCool) chartCool.resize();
-    if (t === 'tab3') drawPistons();
-    if (t === 'tab8') drawScope();
+    requestAnimationFrame(function () {
+      if (chartPV) chartPV.resize();
+      if (chartCylPress) chartCylPress.resize();
+      if (chartValves) chartValves.resize();
+      if (chartWiebe) chartWiebe.resize();
+      if (chartCool) chartCool.resize();
+      if (state.lastSim) {
+        updateCharts(state.lastSim.inp, state.lastSim.fuel, state.lastSim.ecu);
+      }
+      if (t === 'tab3') drawPistons();
+      if (t === 'tab5') drawCoolChart();
+      if (t === 'tab8') drawScope();
+    });
   });
 });
 // Ensure active tab content uses flex layout (Tailwind hidden/flex interplay)
@@ -1700,6 +1725,7 @@ CONTROL_IDS.forEach(function (id) {
     if (id === 'ctrlMhevSoc') state.soc = +el.value;
     const sim = compute(1 / 60);
     state.lastSim = sim;
+    updateCharts(sim.inp, sim.fuel, sim.ecu);
     if ($id('tab3') && !$id('tab3').classList.contains('hidden')) drawPistons();
     if ($id('tab8') && !$id('tab8').classList.contains('hidden') && !state.scopeFrozen) drawScope();
     if (id === 'fanMode') drawCoolChart();
@@ -1711,7 +1737,10 @@ CONTROL_IDS.forEach(function (id) {
   if (el) {
     el.addEventListener('change', function () {
       if (id === 'scopeChannel') txt('scopeBarLeft', el.value + ' — generated waveform');
-      compute(1 / 60);
+      const sim = compute(1 / 60);
+      state.lastSim = sim;
+      updateCharts(sim.inp, sim.fuel, sim.ecu);
+      if ($id('tab3') && !$id('tab3').classList.contains('hidden')) drawPistons();
       if ($id('tab8') && !$id('tab8').classList.contains('hidden')) drawScope();
     });
   }
@@ -1836,11 +1865,19 @@ let resizeTimer = null;
 window.addEventListener('resize', function () {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(function () {
-    if (chartPV) chartPV.resize(); if (chartCylPress) chartCylPress.resize();
-    if (chartValves) chartValves.resize(); if (chartWiebe) chartWiebe.resize();
-    if (chartCool) chartCool.resize();
-    drawPistons(); drawScope();
-  }, 120);
+    requestAnimationFrame(function () {
+      if (chartPV) chartPV.resize();
+      if (chartCylPress) chartCylPress.resize();
+      if (chartValves) chartValves.resize();
+      if (chartWiebe) chartWiebe.resize();
+      if (chartCool) chartCool.resize();
+      if (state.lastSim) {
+        updateCharts(state.lastSim.inp, state.lastSim.fuel, state.lastSim.ecu);
+      }
+      drawPistons();
+      drawScope();
+    });
+  }, 100);
 });
 
 /* ---------- Main animation loop (requestAnimationFrame, 60 FPS) ---------- */
@@ -2070,6 +2107,9 @@ window.addEventListener('DOMContentLoaded', function () {
   initCustomSelects();
   initCharts();
   state.lastSim = compute(1 / 60);
+  if (state.lastSim) {
+    updateCharts(state.lastSim.inp, state.lastSim.fuel, state.lastSim.ecu);
+  }
   drawCoolChart();
   drawPistons();
   drawScope();
