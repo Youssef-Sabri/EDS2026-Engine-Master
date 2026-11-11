@@ -633,7 +633,6 @@
         </div>
         <div class="flex flex-col justify-end min-w-0">
           <label for="mhevMode" class="ctl-label mb-1">Hybrid mode</label>
-          <span id="valMhevMode" class="hidden">Automatic</span>
           <select id="mhevMode">
             <option value="auto" selected>Automatic</option>
             <option value="assist">Motor assist</option>
@@ -656,7 +655,6 @@
       <div class="grid grid-cols-2 gap-3 mt-3">
         <div class="flex flex-col justify-end min-w-0">
           <label for="gearSelect" class="ctl-label mb-1">Selected gear</label>
-          <span id="valGear" class="hidden">5th · 0.822</span>
           <select id="gearSelect">
             <option value="0">1st · 3.929</option>
             <option value="1">2nd · 2.318</option>
@@ -751,16 +749,10 @@
   <section id="tab8" class="tab-content hidden flex-col gap-4">
     <div class="card px-4 py-4 sm:px-5">
       <div class="flex items-center justify-between gap-2">
-      <h3 class="text-sm sm:text-base font-semibold text-slate-900 tracking-tight">Dynamic oscilloscope</h3>
-    </div>
-    <div class="btn-toolbar mt-3">
-      <button id="scopeBtnPause" class="btn btn-outline-gray">⏸ Pause / ▶ Resume</button>
-      <button id="scopeBtnFreeze" class="btn btn-outline-gray">❄ Freeze trace</button>
-      <button id="scopeBtnClear" class="btn btn-outline-gray">✕ Clear trace</button>
-      <button id="scopeBtnReset" class="btn btn-outline-gray">↺ Reset faults</button>
-    </div>
+        <h3 class="text-sm sm:text-base font-semibold text-slate-900 tracking-tight">Dynamic oscilloscope</h3>
+      </div>
 
-      <div class="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-3 mt-3">
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-3 mt-3">
         <div class="flex flex-col justify-end min-w-0">
           <label for="scopeChannel" class="ctl-label mb-1">Channel</label>
           <select id="scopeChannel">
@@ -781,14 +773,6 @@
             <option value="50">50 ms/div</option>
             <option value="20">20 ms/div</option>
             <option value="10">10 ms/div</option>
-          </select>
-        </div>
-        <div class="flex flex-col justify-end min-w-0">
-          <label for="scopeSigType" class="ctl-label mb-1">Signal type</label>
-          <select id="scopeSigType">
-            <option value="native" selected>Native</option>
-            <option value="analog">Analog</option>
-            <option value="digital">Digital</option>
           </select>
         </div>
         <div class="flex flex-col justify-end min-w-0">
@@ -881,7 +865,7 @@ const state = {
   coolHistory: [98.4], coolTime: [0],
   soc: 65, clutchTemp: 45,
   lastDtdt: 0, lastBattKw: 0,
-  scopePaused: false, scopeFrozen: false, scopeTime: 0,
+  scopeTime: 0,
   P: { P0: 85.3, P1: 83.8, P2: 83.8, P3: 124.0, P4: 116.0, P5: 114.0, P6: 98.0, P7: 96.8, P8: 96.8,
        T0: 283.15, T2: 283.15, T3: 327.0, T4: 310.5, T5: 310.5, rho6: 1.1 },
   out: {},                        // latest computed outputs
@@ -1254,14 +1238,12 @@ function updateDOM(inp, ecu, fuel, cool, mhev) {
   txt('valMotorP', Math.round(vNum('ctrlMotorP')) + ' kW');
   txt('valRegenEff', Math.round(vNum('ctrlRegenEff')) + ' %');
   txt('valBrakePedal', Math.round(vNum('ctrlBrakePedal')) + ' %');
-  txt('valMhevMode', $id('mhevMode') ? $id('mhevMode').options[$id('mhevMode').selectedIndex].text : 'Automatic');
   const mb = $id('mhevBadge');
   if (mb) { mb.className = mhev.badgeClass; txt('mhevBadge', mhev.badge); }
   txt('mhevTorque', mhev.motorTq.toFixed(1));
   txt('mhevPower', (mhev.regenKw > 0 ? -mhev.regenKw : mhev.motorKw).toFixed(2));
   txt('mhevCurrent', mhev.battA.toFixed(1));
   txt('mhevBattP', mhev.battKw.toFixed(2));
-  txt('valGear', $id('gearSelect') ? $id('gearSelect').options[$id('gearSelect').selectedIndex].text : '5th · 0.822');
   txt('valFinalDrive', vNum('ctrlFinalDrive').toFixed(2));
   txt('dctRatio', mhev.gr.toFixed(3));
   txt('dctInputRpm', String(Math.round(mhev.inputRpm)));
@@ -1619,12 +1601,11 @@ function drawScope() {
 
   const ch = $id('scopeChannel') ? $id('scopeChannel').value : 'CKP';
   const timebase = +($id('scopeTimebase') ? $id('scopeTimebase').value : 100);
-  const sigType = $id('scopeSigType') ? $id('scopeSigType').value : 'native';
   const vs = +($id('scopeVScale') ? $id('scopeVScale').value : 2);
   const scopeWin = timebase * 10 / 1000;                                // s
   const mid = padT + gridH / 2;
   const pxPerV = gridH / (8 * vs);
-  const isDigital = sigType === 'digital' || (sigType === 'native' && ch === 'CMP');
+  const isDigital = ch === 'CMP';
 
   // Envelope trace (red #ef4444): subsample per column to suppress aliasing
   const yHi = [], yLo = [], step = 2;
@@ -1633,10 +1614,9 @@ function drawScope() {
     let lo = Infinity, hi = -Infinity;
     for (let k = 0; k < 14; k++) {
       let y = scopeSignal(ch, t0 + (k / 14) * (scopeWin * step / Math.max(1, gridW)), state.lastSim);
-      if (isDigital) y = y > 2.5 ? 4.8 : 0;
       if (y < lo) lo = y; if (y > hi) hi = y;
     }
-    const bipolar = (ch === 'CKP' && !isDigital);
+    const bipolar = (ch === 'CKP');
     const py = function (yv) {
       if (bipolar) return mid - yv * pxPerV * 1.9;
       return mid + (2.4 - yv) * pxPerV;
@@ -1716,7 +1696,7 @@ const CONTROL_IDS = [
   'ctrlMhevSoc', 'ctrlMotorTq', 'ctrlMotorP', 'ctrlRegenEff', 'ctrlBrakePedal', 'mhevMode',
   'gearSelect', 'ctrlFinalDrive', 'selectCylinder',
   'faultChannel', 'faultTypeSel', 'faultSeverity',
-  'scopeChannel', 'scopeTimebase', 'scopeSigType', 'scopeVScale'
+  'scopeChannel', 'scopeTimebase', 'scopeVScale'
 ];
 CONTROL_IDS.forEach(function (id) {
   const el = $id(id);
@@ -1729,12 +1709,12 @@ CONTROL_IDS.forEach(function (id) {
     state.lastSim = sim;
     updateCharts(sim.inp, sim.fuel, sim.ecu);
     if ($id('tab3') && !$id('tab3').classList.contains('hidden')) drawPistons();
-    if ($id('tab8') && !$id('tab8').classList.contains('hidden') && !state.scopeFrozen) drawScope();
+    if ($id('tab8') && !$id('tab8').classList.contains('hidden')) drawScope();
     if (id === 'fanMode') drawCoolChart();
   });
 });
 // Select elements fire 'change' as well — covered by 'input' in modern browsers; keep explicit for safety:
-['faultChannel', 'faultTypeSel', 'fanMode', 'mhevMode', 'gearSelect', 'selectCylinder', 'scopeChannel', 'scopeTimebase', 'scopeSigType', 'scopeVScale'].forEach(function (id) {
+['faultChannel', 'faultTypeSel', 'fanMode', 'mhevMode', 'gearSelect', 'selectCylinder', 'scopeChannel', 'scopeTimebase', 'scopeVScale'].forEach(function (id) {
   const el = $id(id);
   if (el) {
     el.addEventListener('change', function () {
@@ -1784,7 +1764,7 @@ $id('btnStep10').addEventListener('click', function () {
   const sim = compute(1 / 60);
   drawPistons();
   updateCharts(sim.inp, sim.fuel, sim.ecu);
-  if ($id('tab8') && !$id('tab8').classList.contains('hidden') && !state.scopeFrozen) drawScope();
+  if ($id('tab8') && !$id('tab8').classList.contains('hidden')) drawScope();
 });
 $id('btnResetModel').addEventListener('click', function () {
   Object.keys(DEF).forEach(function (k) {
@@ -1793,8 +1773,7 @@ $id('btnResetModel').addEventListener('click', function () {
   });
   state.running = true; state.autoAngle = true; state.crank = 0;
   state.ect = 98.4; state.fanLow = false; state.fanHigh = false;
-  state.soc = 65; state.simTime = 0; state.scopeTime = 0; state.scopeFrozen = false; state.scopePaused = false;
-  setBtnState('scopeBtnPause', false); setBtnState('scopeBtnFreeze', false);
+  state.soc = 65; state.simTime = 0; state.scopeTime = 0;
   state.coolHistory = []; state.coolTime = [];
   txt('autoAngleState', 'ON'); txt('scopeBarLeft', 'CKP — generated waveform');
   compute(1 / 60); setHeaderState(); markToolbarState(); drawPistons(); drawCoolChart(); drawScope();
@@ -1840,31 +1819,6 @@ function logCooling() {
   }
 }
 
-/* ---------- Tab 8 dedicated actions ---------- */
-function setBtnState(id, on) {
-  const b = $id(id);
-  if (b) b.classList.toggle('is-on', on);
-}
-$id('scopeBtnPause').addEventListener('click', function () {
-  state.scopePaused = !state.scopePaused;
-  setBtnState('scopeBtnPause', state.scopePaused);
-});
-$id('scopeBtnFreeze').addEventListener('click', function () {
-  state.scopeFrozen = !state.scopeFrozen;
-  setBtnState('scopeBtnFreeze', state.scopeFrozen);
-});
-$id('scopeBtnClear').addEventListener('click', function () {
-  state.scopeTime = 0; state.scopeFrozen = false;
-  setBtnState('scopeBtnFreeze', false);
-  drawScope();
-});
-$id('scopeBtnReset').addEventListener('click', function () {
-  $id('faultChannel').value = 'none';
-  $id('faultTypeSel').value = 'open';
-  $id('faultSeverity').value = String(DEF.faultSeverity);
-  state.lastSim = compute(1 / 60); drawScope();
-});
-
 /* ---------- Resize handling ---------- */
 let resizeTimer = null;
 window.addEventListener('resize', function () {
@@ -1898,12 +1852,12 @@ function loop(ts) {
       const cc = $id('ctrlCrank');
       if (cc && document.activeElement !== cc) cc.value = String(Math.round(state.crank));
     }
-    if (!state.scopePaused && !state.scopeFrozen) state.scopeTime += dt;
+    state.scopeTime += dt;
     state.lastSim = compute(dt);
     setHeaderState();
     if (Math.floor(state.simTime) > lastLoggedSec) { lastLoggedSec = Math.floor(state.simTime); logCooling(); updateChartsCool(); }
     if (!$id('tab3').classList.contains('hidden')) drawPistons();
-    if (!$id('tab8').classList.contains('hidden') && !state.scopeFrozen) drawScope();
+    if (!$id('tab8').classList.contains('hidden')) drawScope();
   }
   requestAnimationFrame(loop);
 }
