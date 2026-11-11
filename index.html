@@ -1579,27 +1579,33 @@ function scopeSignal(ch, tAbs, sim) {
     switch (ch) {
       case 'CKP': {
         const toothPos = (revs * 60) % 60;
-        if (toothPos >= 58) return 0;                              // genuine 2-tooth gap each rev
-        return 2.1 * Math.sin(toothPos * 2 * Math.PI);
+        if (toothPos >= 58) return 0.05;                              // genuine 2-tooth gap each rev
+        const phase = toothPos % 1;
+        const amp = 2.4 + 0.15 * Math.sin(toothPos * 0.2);
+        return amp * Math.pow(Math.sin(Math.PI * phase), 1.6);
       }
-      case 'CMP': return (((revs / 2) % 1) < 0.5) ? 4.8 : 0;          // toggles at N/120 Hz
+      case 'CMP': {
+        const camPhase = (revs / 2) % 1;
+        return camPhase < 0.5 ? 4.8 : 0.1;
+      }
       case 'TPS1': return 0.5 + 4.0 * inp.thr / 100;
       case 'TPS2': return 4.5 - 3.5 * inp.thr / 100;
       case 'MAP': return 0.5 + 4.0 * inp.P6 / 250;
       case 'ECT': return cool.vNtc;
       case 'RAIL': return 0.5 + 4.0 * fuel.rail / 350;
-      case 'INJ': {                                                   // low-side pulses each 2-rev quarter
-        const period = 30 / rpm;                                      // s between fires
-        const on = (tAbs % period) < fuel.pwMs / 1000;
-        return on ? 0.2 : 4.8;
+      case 'INJ': {
+        const periodRevs = 0.5;                                       // one fire per half rev for 4 cyl
+        const cyc = revs % periodRevs;
+        const durRevs = (fuel.pwMs / 1000) * (rpm / 60);
+        return (cyc < durRevs) ? 0.2 : 4.8;
       }
       default: return 0;
     }
   })();
   const affected = fch !== 'none' && (MAP_BTWN[fch] === ch ||
     (fch === 'tps' && (ch === 'TPS1' || ch === 'TPS2')) ||
-    (fch === 'misfire' && ch === 'INJ' && true) ||
-    (fch === 'knock' && ch === 'INJ' && true));
+    (fch === 'misfire' && ch === 'INJ') ||
+    (fch === 'knock' && ch === 'INJ'));
   if (!affected) return y;
   if (fty === 'open') return (ch === 'INJ') ? 4.8 : 0;
   if (fty === 'short') return 0.05;
@@ -1625,40 +1631,41 @@ function drawScope() {
   const ch = $id('scopeChannel') ? $id('scopeChannel').value : 'CKP';
   const timebase = +($id('scopeTimebase') ? $id('scopeTimebase').value : 100);
   const vs = +($id('scopeVScale') ? $id('scopeVScale').value : 2);
-  const scopeWin = timebase * 10 / 1000;                                // s
-  const mid = padT + gridH / 2;
-  const pxPerV = gridH / (8 * vs);
   const isDigital = ch === 'CMP';
 
-  // Envelope trace (red #ef4444): subsample per column to suppress aliasing
-  const yHi = [], yLo = [], step = 2;
-  for (let px = 0; px <= gridW; px += step) {
-    const t0 = state.scopeTime + (px / gridW) * scopeWin;
-    let lo = Infinity, hi = -Infinity;
-    for (let k = 0; k < 14; k++) {
-      let y = scopeSignal(ch, t0 + (k / 14) * (scopeWin * step / Math.max(1, gridW)), state.lastSim);
-      if (y < lo) lo = y; if (y > hi) hi = y;
-    }
-    const bipolar = (ch === 'CKP');
-    const py = function (yv) {
-      if (bipolar) return mid - yv * pxPerV * 1.9;
-      return mid + (2.4 - yv) * pxPerV;
-    };
-    yHi.push([padL + px, Math.max(padT + 1, py(hi))]);
-    yLo.push([padL + px, Math.min(padT + gridH - 1, py(lo))]);
+  // Ground baseline at division 7 out of 8 (giving authentic automotive scope layout)
+  const gndY = padT + gridH * 7 / 8;
+  const pxPerV = (gridH * 7 / 8) / (7 * vs);
+  const py = function (v) {
+    return gndY - v * pxPerV * 2.5;
+  };
+
+  // Signal-calibrated sweep window:
+  // For high-speed engine position sensors (CKP/CMP/INJ), window displays readable tooth patterns (matching reference video)
+  const rpm = (state.lastSim && state.lastSim.inp) ? state.lastSim.inp.rpm : 2150;
+  let scopeWin;
+  if (ch === 'CKP') {
+    const nominalRevs = 1.15 * (timebase / 100);
+    scopeWin = (nominalRevs * 60) / Math.max(600, rpm);
+  } else if (ch === 'CMP') {
+    const nominalRevs = 4.0 * (timebase / 100);
+    scopeWin = (nominalRevs * 60) / Math.max(600, rpm);
+  } else if (ch === 'INJ') {
+    const nominalRevs = 2.0 * (timebase / 100);
+    scopeWin = (nominalRevs * 60) / Math.max(600, rpm);
+  } else {
+    scopeWin = (timebase * 10) / 1000;
   }
-  ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 1.6; ctx.lineJoin = 'round';
+
+  // Draw clean continuous waveform trace
+  ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 1.8; ctx.lineJoin = 'round';
   ctx.beginPath();
-  for (let i = 0; i < yHi.length; i++) {
-    const x = yHi[i][0], yTop = yHi[i][1], yBot = yLo[i][1];
-    if (i === 0) {
-      ctx.moveTo(x, (yTop + yBot) / 2);
-    } else {
-      ctx.lineTo(x, yTop);
-    }
-    if (Math.abs(yBot - yTop) > 1.5) {
-      ctx.lineTo(x, yBot);
-    }
+  for (let px = 0; px <= gridW; px++) {
+    const t = state.scopeTime + (px / gridW) * scopeWin;
+    const yv = scopeSignal(ch, t, state.lastSim);
+    const yPx = Math.max(padT + 1, Math.min(padT + gridH - 1, py(yv)));
+    if (px === 0) ctx.moveTo(padL + px, yPx);
+    else ctx.lineTo(padL + px, yPx);
   }
   ctx.stroke();
 
