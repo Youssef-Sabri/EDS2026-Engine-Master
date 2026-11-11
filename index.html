@@ -436,7 +436,7 @@
         <span class="ctl-val">Displacement: 1598 cc</span>
         <span class="ctl-val">Firing order: 1–3–4–2</span>
       </div>
-      <div class="w-full h-[230px] sm:h-[270px] mt-3 bg-slate-50 border border-slate-200 rounded-xl"><canvas id="canvasPistons" class="w-full h-full"></canvas></div>
+      <div class="w-full h-[260px] sm:h-[300px] mt-3 bg-slate-50 border border-slate-200 rounded-xl"><canvas id="canvasPistons" class="w-full h-full"></canvas></div>
     </div>
 
     <div class="card px-4 py-4 sm:px-5">
@@ -1357,13 +1357,54 @@ function compute(dt) {
 let chartPV = null, chartCylPress = null, chartValves = null, chartWiebe = null, chartCool = null;
 
 function baseOpts(yTitle) {
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
   return {
     responsive: true, maintainAspectRatio: false, animation: false,
+    layout: { padding: { left: 4, right: 8, top: 8, bottom: 4 } },
     interaction: { intersect: false, mode: 'index' },
-    plugins: { legend: { display: false } },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        enabled: true,
+        backgroundColor: 'rgba(15, 23, 42, 0.94)',
+        titleColor: '#f8fafc',
+        bodyColor: '#cbd5e1',
+        borderColor: '#334155',
+        borderWidth: 1,
+        padding: 8,
+        cornerRadius: 7,
+        titleFont: { size: 11, weight: 'bold', family: 'system-ui, sans-serif' },
+        bodyFont: { size: 10.5, family: 'system-ui, sans-serif' },
+        displayColors: false
+      }
+    },
     scales: {
-      x: { grid: { color: '#f1f5f9' }, ticks: { color: '#64748b', font: { size: 9 }, maxTicksLimit: 10 }, title: { display: false } },
-      y: { grid: { color: '#f1f5f9' }, ticks: { color: '#64748b', font: { size: 9 } }, title: { display: true, text: yTitle, color: '#475569', font: { size: 10, weight: 'bold' } } }
+      x: {
+        grid: { color: '#f1f5f9' },
+        ticks: {
+          color: '#64748b',
+          font: { size: isMobile ? 8.5 : 9.5, weight: '500' },
+          maxTicksLimit: isMobile ? 6 : 10,
+          maxRotation: 0,
+          autoSkip: true
+        },
+        title: { display: false }
+      },
+      y: {
+        grid: { color: '#f1f5f9' },
+        ticks: {
+          color: '#64748b',
+          font: { size: isMobile ? 8.5 : 9.5, weight: '500' },
+          maxTicksLimit: isMobile ? 5 : 8
+        },
+        title: {
+          display: !!yTitle,
+          text: yTitle,
+          color: '#475569',
+          font: { size: isMobile ? 9.5 : 10.5, weight: 'bold' },
+          padding: { bottom: 4 }
+        }
+      }
     }
   };
 }
@@ -1486,6 +1527,8 @@ function updateCharts(inp, fuel, ecu) {
     }
     chartWiebe.data.labels = wLabels;
     chartWiebe.data.datasets[0].data = wData;
+    chartWiebe.options.scales.x.title = { display: true, text: 'Crank angle relative to ignition (° ATDC) →', color: '#475569', font: { size: 10, weight: 'bold' } };
+    chartWiebe.options.scales.y.title = { display: true, text: 'Mass fraction burned x_b (%)', color: '#475569', font: { size: 10, weight: 'bold' } };
     chartWiebe.options.scales.y.min = 0;
     chartWiebe.options.scales.y.max = 100;
     chartWiebe.update('none');
@@ -1497,6 +1540,8 @@ function updateCharts(inp, fuel, ecu) {
     const all = state.coolHistory.concat([state.ect]);
     chartCool.options.scales.y.min = Math.max(0, Math.min.apply(null, all) - 6);
     chartCool.options.scales.y.max = Math.min(140, Math.max.apply(null, all) + 6);
+    chartCool.options.scales.x.title = { display: true, text: 'Simulation time (s) →', color: '#475569', font: { size: 10, weight: 'bold' } };
+    chartCool.options.scales.y.title = { display: true, text: 'ECT (°C)', color: '#475569', font: { size: 10, weight: 'bold' } };
     chartCool.update('none');
   }
 }
@@ -1506,64 +1551,152 @@ function drawPistons() {
   const c = $id('canvasPistons'); if (!c) return;
   const dpr = window.devicePixelRatio || 1;
   const w = c.clientWidth || 800, h = c.clientHeight || 260;
-  if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+  if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) {
+    c.width = Math.round(w * dpr);
+    c.height = Math.round(h * dpr);
+  }
   const ctx = c.getContext('2d');
-  ctx.save(); ctx.scale(dpr, dpr); ctx.clearRect(0, 0, w, h);
+  ctx.save();
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, w, h);
 
+  const isMobile = w < 500;
+  const colW = w / 4;
   const rod = vNum('ctrlRod');
   const offs = { 1: 0, 3: 180, 4: 360, 2: 540 };
   const compFrac = pistonDispMm(180, rod) / STROKE; // ≈ 1
-  const colW = w / 4, crankY = h - 42, strokeH = Math.min(52, h * 0.24);
-  const boreW = clamp(colW * 0.72, 34, 70), halfBore = boreW / 2;
+
+  // Proportional layout calculations
+  const topPad = 22;                               // space for CYL label at top
+  const bottomCardH = 46;                          // space for phase badge + angle/disp
+  const crankAreaH = 34;                           // space for crank throw
+  const availableBoreH = h - topPad - bottomCardH - crankAreaH;
+  const boreH = clamp(availableBoreH, 90, 150);
+  const boreTopY = topPad;
+  const boreBottomY = boreTopY + boreH;
+  const crankY = boreBottomY + 16;
+  const boreW = clamp(colW * 0.74, 38, 76);
+  const halfBore = boreW / 2;
+  const pistonH = clamp(boreW * 0.44, 22, 34);
+  const strokeTravel = boreH - pistonH - 12;
+
   for (let i = 0; i < 4; i++) {
     const cylNum = [1, 2, 3, 4][i];
-    // firing-TDC offsets: phase of cyl k lags by offs
-    const localPhi = (((state.crank - offs[cylNum]) % 720) + 720) % 720;
-    const dispFrac = pistonDispMm(localPhi, rod) / (STROKE * compFrac);
-    const pistonY = 44 + dispFrac * strokeH;
     const cx = colW * i + colW / 2;
+    const localPhi = (((state.crank - offs[cylNum]) % 720) + 720) % 720;
+    const dispMm = pistonDispMm(localPhi, rod);
+    const dispFrac = dispMm / (STROKE * compFrac);
+    const pistonY = boreTopY + 4 + dispFrac * strokeTravel;
 
     let phase = 'POWER', col = '#dc2626', bg = '#fee2e2';
     if (localPhi >= 180 && localPhi < 360) { phase = 'EXHAUST'; col = '#475569'; bg = '#f1f5f9'; }
     else if (localPhi >= 360 && localPhi < 540) { phase = 'INTAKE'; col = '#0284c7'; bg = '#e0f2fe'; }
     else if (localPhi >= 540) { phase = 'COMPRESSION'; col = '#b45309'; bg = '#fef3c7'; }
 
-    // Bore + chamber
-    ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 2;
-    ctx.strokeRect(cx - halfBore, 30, boreW, 150);
-    ctx.fillStyle = '#f1f5f9'; ctx.fillRect(cx - halfBore + 1, 31, boreW - 2, 12);
-
-    // Rod + crank
-    const th = localPhi * Math.PI / 180;
-    const pinX = cx + Math.sin(th) * 18, pinY = crankY - Math.cos(th) * 18;
-    ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 6;
-    ctx.beginPath(); ctx.moveTo(cx, pistonY + 22); ctx.lineTo(pinX, pinY); ctx.stroke();
-    ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(cx, crankY, 20, 0, Math.PI * 2); ctx.stroke();
-    ctx.fillStyle = '#0284c7'; ctx.beginPath(); ctx.arc(pinX, pinY, 5, 0, Math.PI * 2); ctx.fill();
-
-    // Piston
-    ctx.fillStyle = '#ffffff'; ctx.strokeStyle = col; ctx.lineWidth = 2;
-    ctx.beginPath();
-    if (ctx.roundRect) ctx.roundRect(cx - halfBore + 3, pistonY, boreW - 6, 40, 5); else ctx.rect(cx - halfBore + 3, pistonY, boreW - 6, 40);
-    ctx.fill(); ctx.stroke();
-    ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(cx - halfBore + 5, pistonY + 8); ctx.lineTo(cx + halfBore - 5, pistonY + 8);
-    ctx.moveTo(cx - halfBore + 5, pistonY + 14); ctx.lineTo(cx + halfBore - 5, pistonY + 14); ctx.stroke();
-    ctx.fillStyle = '#64748b'; ctx.beginPath(); ctx.arc(cx, pistonY + 22, 3.5, 0, Math.PI * 2); ctx.fill();
-
-    // Labels + live displacement + stroke badge
+    // 1. Cylinder label at top
     ctx.textAlign = 'center';
-    ctx.fillStyle = '#0f172a'; ctx.font = 'bold 11px sans-serif';
-    ctx.fillText('Cyl ' + cylNum + ' — ' + Math.round(pistonDispMm(localPhi, rod) * 10) / 10 + ' mm', cx, 20);
-    const bw = clamp(colW * 0.8, 46, 78), bh = 17;
-    ctx.fillStyle = bg; ctx.beginPath();
-    if (ctx.roundRect) ctx.roundRect(cx - bw / 2, h - 66, bw, bh, 8); else ctx.rect(cx - bw / 2, h - 66, bw, bh);
-    ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.stroke();
-    ctx.fillStyle = col; ctx.font = 'bold 8.5px monospace';
-    ctx.fillText(phase, cx, h - 56);
-    ctx.fillStyle = '#64748b'; ctx.font = '9px monospace';
-    ctx.fillText(Math.round(localPhi) + '°', cx, h - 36);
+    ctx.fillStyle = '#0f172a';
+    ctx.font = isMobile ? 'bold 10px -apple-system, BlinkMacSystemFont, sans-serif' : 'bold 11px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillText('CYL ' + cylNum, cx, 14);
+
+    // 2. Bore & combustion chamber outline
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(cx - halfBore, boreTopY, boreW, boreH);
+
+    // Combustion chamber ceiling & valve indentations
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(cx - halfBore + 1, boreTopY + 1, boreW - 2, 8);
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx - halfBore + 6, boreTopY + 4);
+    ctx.lineTo(cx - halfBore + 14, boreTopY + 4);
+    ctx.moveTo(cx + halfBore - 14, boreTopY + 4);
+    ctx.lineTo(cx + halfBore - 6, boreTopY + 4);
+    ctx.stroke();
+
+    // 3. Crankshaft throw & connecting rod
+    const th = localPhi * Math.PI / 180;
+    const crankR = 14;
+    const pinX = cx + Math.sin(th) * crankR;
+    const pinY = crankY - Math.cos(th) * crankR;
+
+    // Connecting rod (steel I-beam styling)
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = 5;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(cx, pistonY + pistonH * 0.6);
+    ctx.lineTo(pinX, pinY);
+    ctx.stroke();
+
+    ctx.strokeStyle = '#d97736'; // copper center line
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(cx, pistonY + pistonH * 0.6);
+    ctx.lineTo(pinX, pinY);
+    ctx.stroke();
+
+    // Crank journal circle
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(cx, crankY, crankR, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Crank pin
+    ctx.fillStyle = '#0284c7';
+    ctx.beginPath();
+    ctx.arc(pinX, pinY, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 4. Piston head (metallic crown with ring grooves)
+    ctx.fillStyle = '#475569'; // slate-600 metallic crown
+    ctx.strokeStyle = col;     // accented border
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(cx - halfBore + 2.5, pistonY, boreW - 5, pistonH, 3);
+    else ctx.rect(cx - halfBore + 2.5, pistonY, boreW - 5, pistonH);
+    ctx.fill();
+    ctx.stroke();
+
+    // Compression ring grooves
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx - halfBore + 5, pistonY + 6);
+    ctx.lineTo(cx + halfBore - 5, pistonY + 6);
+    ctx.moveTo(cx - halfBore + 5, pistonY + 11);
+    ctx.lineTo(cx + halfBore - 5, pistonY + 11);
+    ctx.stroke();
+
+    // Wrist pin
+    ctx.fillStyle = '#f8fafc';
+    ctx.beginPath();
+    ctx.arc(cx, pistonY + pistonH * 0.6, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 5. Phase badge pill (dedicated lower card area)
+    const badgeY = h - 38;
+    const bw = clamp(colW * 0.82, 48, 76), bh = 17;
+    ctx.fillStyle = bg;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(cx - bw / 2, badgeY, bw, bh, 8);
+    else ctx.rect(cx - bw / 2, badgeY, bw, bh);
+    ctx.fill();
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.fillStyle = col;
+    ctx.font = 'bold 8.5px ui-monospace, SFMono-Regular, monospace';
+    ctx.fillText(phase, cx, badgeY + 12);
+
+    // 6. Sub-badge telemetry: angle & displacement
+    ctx.fillStyle = '#64748b';
+    ctx.font = isMobile ? '8.5px ui-monospace, monospace' : '9.5px ui-monospace, monospace';
+    ctx.fillText(Math.round(localPhi) + '° · ' + dispMm.toFixed(1) + 'mm', cx, h - 8);
   }
   ctx.restore();
 }
@@ -1616,17 +1749,44 @@ function drawScope() {
   const c = $id('scopeCanvas'); if (!c) return;
   const dpr = window.devicePixelRatio || 1;
   const w = c.clientWidth || 800, h = c.clientHeight || 260;
-  if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+  if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) {
+    c.width = Math.round(w * dpr);
+    c.height = Math.round(h * dpr);
+  }
   const ctx = c.getContext('2d');
   ctx.save(); ctx.scale(dpr, dpr);
 
-  // Screen + grid (#101a22 bg, #1e2d3b grid)
-  ctx.fillStyle = '#101a22'; ctx.fillRect(0, 0, w, h);
-  ctx.strokeStyle = '#1e2d3b'; ctx.lineWidth = 1;
-  const nDivX = 10, nDivY = 8, padL = 34, padR = 12, padT = 12, padB = 14;
+  const isMobile = w < 500;
+  const padL = isMobile ? 28 : 34, padR = 12, padT = 12, padB = 14;
   const gridW = w - padL - padR, gridH = h - padT - padB;
-  for (let i = 0; i <= nDivX; i++) { const x = padL + i * gridW / nDivX; ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT + gridH); ctx.stroke(); }
-  for (let j = 0; j <= nDivY; j++) { const y = padT + j * gridH / nDivY; ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + gridW, y); ctx.stroke(); }
+
+  // Screen background (#101a22)
+  ctx.fillStyle = '#101a22'; ctx.fillRect(0, 0, w, h);
+
+  // Reticle grid (#1e2d3b)
+  ctx.strokeStyle = '#1e2d3b'; ctx.lineWidth = 1;
+  const nDivX = 10, nDivY = 8;
+  for (let i = 0; i <= nDivX; i++) {
+    const x = padL + i * gridW / nDivX;
+    ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT + gridH); ctx.stroke();
+  }
+  for (let j = 0; j <= nDivY; j++) {
+    const y = padT + j * gridH / nDivY;
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + gridW, y); ctx.stroke();
+  }
+
+  // Authentic center crosshair subdivision ticks
+  const midX = padL + gridW / 2;
+  const midY = padT + gridH / 2;
+  ctx.strokeStyle = '#2d3f52'; ctx.lineWidth = 1;
+  for (let k = 1; k < 50; k++) {
+    const tx = padL + k * (gridW / 50);
+    ctx.beginPath(); ctx.moveTo(tx, midY - 2); ctx.lineTo(tx, midY + 2); ctx.stroke();
+  }
+  for (let k = 1; k < 40; k++) {
+    const ty = padT + k * (gridH / 40);
+    ctx.beginPath(); ctx.moveTo(midX - 2, ty); ctx.lineTo(midX + 2, ty); ctx.stroke();
+  }
 
   const ch = $id('scopeChannel') ? $id('scopeChannel').value : 'CKP';
   const timebase = +($id('scopeTimebase') ? $id('scopeTimebase').value : 100);
@@ -1639,6 +1799,10 @@ function drawScope() {
   const py = function (v) {
     return gndY - v * pxPerV * 2.5;
   };
+
+  // Ground marker on left margin
+  ctx.fillStyle = '#475569'; ctx.font = '8px monospace'; ctx.textAlign = 'right';
+  ctx.fillText('0V', padL - 4, gndY + 3);
 
   // Signal-calibrated sweep window:
   // For high-speed engine position sensors (CKP/CMP/INJ), window displays readable tooth patterns (matching reference video)
@@ -1658,7 +1822,7 @@ function drawScope() {
   }
 
   // Draw clean continuous waveform trace
-  ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 1.8; ctx.lineJoin = 'round';
+  ctx.strokeStyle = '#ef4444'; ctx.lineWidth = isMobile ? 1.6 : 1.8; ctx.lineJoin = 'round';
   ctx.beginPath();
   for (let px = 0; px <= gridW; px++) {
     const t = state.scopeTime + (px / gridW) * scopeWin;
@@ -1670,14 +1834,21 @@ function drawScope() {
   ctx.stroke();
 
   // Overlays
-  ctx.fillStyle = '#7dd3fc'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'left';
+  ctx.fillStyle = '#7dd3fc';
+  ctx.font = isMobile ? 'bold 10px monospace' : 'bold 11px monospace';
+  ctx.textAlign = 'left';
   ctx.fillText(ch + ' signal', padL + 6, padT + 14);
-  ctx.fillStyle = '#64748b'; ctx.font = '9.5px monospace';
+
+  ctx.fillStyle = '#64748b';
+  ctx.font = isMobile ? '8.5px monospace' : '9.5px monospace';
+  ctx.textAlign = 'left';
   ctx.fillText(timebase + ' ms/div · ' + vs + ' V/div · ' + (isDigital ? 'DIGITAL' : 'ANALOG'), padL + 6, h - 5);
+
   const sim = state.lastSim;
   if (sim && sim.ecu.fch !== 'none') {
     ctx.fillStyle = '#fda4af';
-    ctx.fillText('FAULT: ' + sim.ecu.fch.toUpperCase() + ' / ' + sim.ecu.fty.toUpperCase(), padL + 120, padT + 14);
+    ctx.textAlign = 'right';
+    ctx.fillText('FAULT: ' + sim.ecu.fch.toUpperCase(), padL + gridW - 6, padT + 14);
   }
   ctx.restore();
 }
